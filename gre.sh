@@ -127,7 +127,10 @@ setup_iran_server() {
     echo -e "${YELLOW}       STEP 1: CONFIGURING IRAN SERVER (GRE + FRPS)  ${NC}"
     echo -e "${YELLOW}====================================================${NC}"
 
-    MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null || ip route get 1.1.1.1 | awk '{print $7}')
+    # Prefer the local interface IP (what GRE must bind to) over the egress IP
+    # an external service sees (often different behind NAT, e.g. ipify).
+    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
     read -p "Enter IRAN Server Public IP [Default: $MY_PUBLIC_IP]: " IP_IRAN
     IP_IRAN=${IP_IRAN:-$MY_PUBLIC_IP}
 
@@ -200,7 +203,8 @@ setup_foreign_server() {
     echo -e "\n${YELLOW}====================================================${NC}"
     echo -e "${YELLOW}   STEP 2: CONFIGURING FOREIGN SERVER (GRE + FRPC)  ${NC}"
     echo -e "${YELLOW}====================================================${NC}"
-MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null || ip route get 1.1.1.1 | awk '{print $7}')
+    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
     read -p "Enter FOREIGN Server Public IP [Default: $MY_PUBLIC_IP]: " IP_FOREIGN
     IP_FOREIGN=${IP_FOREIGN:-$MY_PUBLIC_IP}
 
