@@ -47,3 +47,20 @@ sudo bash gre.sh
 
 - لینوکس با `systemd`، دسترسی `root`
 - پورت GRE (پروتکل ۴۷) بین دو سرور باز باشه
+
+## `spoof_test.py` — تست اسپوف مستقیم و تانلی
+
+تک‌فایل پایتون، بدون dependency (raw socket = `root` لازم داره). روی همین دو سرور تست شد: اسپوف مستقیم توسط ingress filtering دراپ شد، ولی حالت تانل روی `lo` دیده شد.
+
+```bash
+# 1. مستقیم: پکت با سورس جعلی straight به تارگت
+sudo python3 spoof_test.py direct --target 85.198.48.162 --port 55999 --spoof-src 192.0.2.1
+# روی تارگت ببین: tcpdump -n 'udp port 55999'
+
+# 2. روی سرور مقصد: helper (باز می‌کنه + لوکال تزریق می‌کنه)
+sudo python3 spoof_test.py helper --listen-port 55996 --deliver-port 55999
+
+# 3. از مبدأ: تانل (پکت جعلی رو می‌ده به helper)
+sudo python3 spoof_test.py tunnel --helper 85.198.48.162 --helper-port 55996 \
+    --spoof-src 192.0.2.1 --target 127.0.0.1 --port 55999
+```
