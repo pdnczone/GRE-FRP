@@ -1,14 +1,14 @@
-# GRE + FRP Reverse Tunnel
+# GRE + FRP Reverse Tunnel 🇮🇷 ↔ 🌍
 
-GRE Layer 3 tunnel + FRP reverse TLS tunnel (Iran ↔ Foreign).
+تونل لایه ۳ GRE + ریورس TLS از FRP. آی‌پی ایران پشت تونل می‌مونه و پورت‌های سرور خارج از طریق آی‌پی ایران در دسترس قرار می‌گیرن.
 
-## Usage
+## نصب آسان (تک‌خطی)
 
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/gre.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/install.sh)
 ```
 
-Or clone and run:
+## نصب دستی
 
 ```bash
 git clone https://github.com/pdnczone/GRE-FRP.git
@@ -16,18 +16,34 @@ cd GRE-FRP
 sudo bash gre.sh
 ```
 
-## Menu
+## مراحل راه‌اندازی
 
-| Option | Action                                     |
-|--------|--------------------------------------------|
-| 1      | Setup IRAN server (GRE + frps)             |
-| 2      | Setup FOREIGN server (GRE + frpc reverse)  |
-| 3      | Check connection status & GRE ping test    |
-| 4      | View FRP live logs                         |
-| 5      | Restart tunnel services                    |
-| 6      | Uninstall everything (GRE + FRP)           |
+1. **اول روی سرور ایران:** گزینه `1` — آی‌پی پابلیک ایران و خارج رو بده، پورت FRP (پیش‌فرض `7000`) و توکن رو نگه دار.
+2. **بعد روی سرور خارج:** گزینه `2` — آی‌پی ایران، پورت و توکن مرحله قبل + لیست پورت‌هایی که می‌خوای ریورس بشن (مثلاً `443, 2083, 8080`).
+3. **تست:** گزینه `3` — وضعیت GRE، پینگ داخلی و سرویس FRP رو نشون می‌ده.
 
-## Architecture
+## این اسکریپت چی کار می‌کنه
 
-- GRE tunnel: Iran `10.10.10.2/30` ↔ Foreign `10.10.10.1/30` (systemd persistent, MTU 1476, MSS clamping)
-- FRP: frps binds `0.0.0.0`, frpc connects via GRE internal IP, TLS enabled, TCP+UDP per port
+| بخش | ایران | خارج |
+|-----|-------|------|
+| تونل GRE | `10.10.10.2/30` | `10.10.10.1/30` |
+| FRP | `frps` (سرور) | `frpc` (کلاینت، وصل به `10.10.10.2` از داخل تونل + TLS) |
+| سرویس | `systemd` دائمی + بوت خودکار | `systemd` دائمی + بوت خودکار |
+
+- تشخیص خودکار معماری (`amd64` / `arm64` / `arm`) و دانلود FRP
+- `ip_forward` + `TCPMSS clamp` برای جلوگیری از fragmentation
+- هر پورت = دو پروکسی `tcp` + `udp` با همون شماره پورت روی ایران
+
+## مدیریت
+
+| گزینه | کار |
+|-------|-----|
+| 3 | بررسی وضعیت + تست پینگ GRE |
+| 4 | لاگ زنده FRP |
+| 5 | ری‌استارت همه سرویس‌ها |
+| 6 | حذف کامل (سرویس‌ها + اینترفیس + باینری‌ها) |
+
+## پیش‌نیاز
+
+- لینوکس با `systemd`، دسترسی `root`
+- پورت GRE (پروتکل ۴۷) بین دو سرور باز باشه
