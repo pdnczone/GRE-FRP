@@ -95,6 +95,13 @@
   pre.logs { background:var(--sunk); border:1px solid var(--ln); border-radius:10px; padding:14px;
     overflow:auto; max-height:340px; font-size:12.5px; line-height:1.6;
     font-family:var(--font-mono); color:var(--tx2); margin:0; white-space:pre-wrap; }
+  .dash-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+  .dash-span { grid-column:1 / -1; }
+  .dash-big { font-size:24px; font-weight:700; color:var(--tx); letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums; }
+  .dash-rows { display:grid; gap:4px; font-size:var(--fs-body); color:var(--tx2); }
+  .dash-rows .dr { display:flex; justify-content:space-between; gap:8px; }
+  .dash-rows .k { color:var(--mu); }
   .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:99;
     background:var(--s2); color:var(--tx); border:1px solid var(--ln2);
     padding:10px 16px; border-radius:10px; box-shadow:var(--lift); }
@@ -215,7 +222,8 @@
       <span class="brand-name">GRE-FRP</span>
     </div>
     <nav class="sidebar-nav" id="sideNav">
-      <button class="nav-item on" data-tab="tunnel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg><span>Tunnel</span></button>
+      <button class="nav-item on" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></button>
+      <button class="nav-item" data-tab="tunnel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg><span>Tunnel</span></button>
       <button class="nav-item" data-tab="setup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Setup</span></button>
       <button class="nav-item" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Logs</span></button>
       <button class="nav-item" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.06-.4.1-.8.1-1.2z"/></svg><span>Settings</span></button>
@@ -231,13 +239,29 @@
       <div class="acts"><button class="hashem-btn hashem-btn-secondary" id="refreshBtn">Refresh</button></div>
     </header>
     <div class="mobnav" id="mobNav">
-      <button data-tab="tunnel" class="on">Tunnel</button>
+      <button data-tab="dashboard" class="on">Dashboard</button>
+      <button data-tab="tunnel">Tunnel</button>
       <button data-tab="setup">Setup</button>
       <button data-tab="logs">Logs</button>
       <button data-tab="settings">Settings</button>
     </div>
     <main class="page">
-      <section id="tab-tunnel">
+      <section id="tab-dashboard">
+        <div class="dash-grid" id="dashGrid">
+          <div class="tunnel-card dash-span"><div class="tc-header"><p class="tc-title">Status</p><span class="status-indicator" id="dashDot"><span class="dot"></span><span id="dashDotTxt">—</span></span></div><div class="dash-big" id="dashState">—</div><div class="qs-hint" id="dashChecked">—</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Ping</p></div><div class="dash-big" id="dashPing">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Traffic</p></div><div class="dash-big" id="dashTotal">N/A</div><div class="qs-hint" id="dashUpDown">—</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">GRE</p></div><div id="dashGre" class="dash-rows">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">FRP</p></div><div id="dashFrp" class="dash-rows">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">IPs</p></div><div id="dashIps" class="dash-rows">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">CPU</p></div><div class="dash-big" id="dashCpu">N/A</div><div class="qs-hint" id="dashLoad">—</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">RAM</p></div><div class="dash-big" id="dashRam">N/A</div><div class="qs-hint" id="dashRamDet">—</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Disk</p></div><div class="dash-big" id="dashDisk">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Connections</p></div><div class="dash-big" id="dashConns">N/A</div></div>
+          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Uptime</p></div><div id="dashUp" class="dash-rows">N/A</div></div>
+        </div>
+      </section>
+      <section id="tab-tunnel" hidden>
         <div class="tunnel-card">
           <div class="tc-header"><p class="tc-title">Tunnel status</p><span class="status-indicator" id="tunnelDot"><span class="dot"></span><span id="tunnelDotTxt">—</span></span></div>
           <div id="tunnel"></div>
@@ -346,7 +370,7 @@ function showLogin() { $('login').classList.remove('hidden'); $('app').classList
 function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
 // tabs (sidebar + mobile nav)
 function goTab(name) {
-  ['tunnel','setup','logs','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
+  ['dashboard','tunnel','setup','logs','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => goTab(b.dataset.tab));
@@ -378,6 +402,54 @@ async function refresh() {
     const s = await api('/api/status');
     renderTunnel(s.local);
   } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
+  refreshDash();
+}
+// ---- dashboard ----
+const NA = 'N/A';
+const fmtBytes = n => {
+  if (n == null) return NA;
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + ' ' + u[i];
+};
+const fmtSecs = s => {
+  if (s == null) return NA;
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+};
+const dr = (k, v) => `<div class="dr"><span class="k">${esc(k)}</span><span>${esc(v ?? NA)}</span></div>`;
+async function refreshDash() {
+  try {
+    const d = await api('/api/dashboard');
+    const on = !!d.online;
+    $('dashState').textContent = on ? '● Online' : '● Offline';
+    $('dashState').style.color = on ? 'var(--ok)' : 'var(--er)';
+    const dd = $('dashDot');
+    if (dd) { dd.className = 'status-indicator ' + (on ? 'active' : 'offline'); $('dashDotTxt').textContent = on ? 'up' : 'down'; }
+    $('dashPing').textContent = d.ping_ok && d.ping ? d.ping : NA;
+    const t = d.traffic || {};
+    $('dashTotal').textContent = fmtBytes(t.total);
+    $('dashUpDown').textContent = '↑ ' + fmtBytes(t.up) + '  ↓ ' + fmtBytes(t.down);
+    const g = d.gre || {};
+    $('dashGre').innerHTML = dr('Link', g.exists ? 'up' : 'down') + dr('Inner', g.inner) + dr('Peer', g.peer);
+    const f = d.frp || {};
+    $('dashFrp').innerHTML = dr('Service', f.up ? (f.svc + ' ●') : 'down') + dr('Port', f.port) + dr('Proxies', (f.proxies||[]).join(', ') || '—');
+    $('dashIps').innerHTML = dr('Public', d.local_pub) + dr('GRE local', g.local) + dr('GRE peer', g.peer) + dr('Role', d.role);
+    const s = d.system || {};
+    $('dashCpu').textContent = s.cpu_pct != null ? s.cpu_pct + '%' : NA;
+    $('dashLoad').textContent = 'load ' + (s.load || NA) + ' · ' + (s.cores || '?') + ' cores';
+    const m = (s.mem) || {};
+    $('dashRam').textContent = m.pct != null ? m.pct + '%' : NA;
+    $('dashRamDet').textContent = m.used != null ? fmtBytes(m.used) + ' / ' + fmtBytes(m.total) : '—';
+    $('dashDisk').textContent = s.disk_pct != null ? s.disk_pct + '%' : NA;
+    $('dashConns').textContent = d.conns != null ? d.conns : NA;
+    const u = d.uptime || {};
+    $('dashUp').innerHTML = dr('System', fmtSecs(u.system)) + dr('Panel', fmtSecs(u.panel)) + (u.frp_since ? dr('FRP since', u.frp_since) : '');
+    $('dashChecked').textContent = 'last check: ' + (d.checked || '—');
+  } catch(e) { /* keep old values; N/A already default */ }
 }
 // ---- setup form ----
 function setRole(role) {
@@ -616,6 +688,7 @@ $('savePass').onclick = async () => {
   catch(e) { showLogin(); }
 })();
 setInterval(() => { if (!$('app').classList.contains('hidden')) refresh(); }, 15000);
+setInterval(() => { if (!$('app').classList.contains('hidden') && !$('tab-dashboard').hidden) refreshDash(); }, 5000);
 </script>
 </body>
 </html>

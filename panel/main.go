@@ -109,6 +109,7 @@ func main() {
 	mux.HandleFunc("GET "+base+"/base.css", serveAsset("base.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET "+base+"/favicon.png", serveAsset("favicon.png", "image/png"))
 	mux.HandleFunc("GET "+base+"/api/status", requireAuth(handleStatus))
+	mux.HandleFunc("GET "+base+"/api/dashboard", requireAuth(handleDashboard))
 	mux.HandleFunc("POST "+base+"/api/login", handleLogin)
 	mux.HandleFunc("POST "+base+"/api/logout", handleLogout)
 	mux.HandleFunc("GET "+base+"/api/logs", requireAuth(handleLogs))
