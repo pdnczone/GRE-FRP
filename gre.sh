@@ -384,6 +384,78 @@ uninstall_all() {
     fi
 }
 
+PANEL_DIR="/usr/local/gre-panel"
+PANEL_BIN="/usr/local/bin/gre-panel"
+PANEL_BRANCH="${PANEL_BRANCH:-panel}"
+
+install_panel() {
+    echo -e "${CYAN}[*] Installing GRE-FRP web panel...${NC}"
+
+    if ! command -v go >/dev/null 2>&1; then
+        echo -e "${CYAN}[*] Installing Go to build the panel...${NC}"
+        apt-get update -qq
+        apt-get install -y -qq golang-go
+    fi
+
+    TMP_PANEL="$(mktemp -d)"
+    if ! curl -fsSL "https://github.com/pdnczone/GRE-FRP/archive/refs/heads/${PANEL_BRANCH}.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
+        echo -e "${RED}[!] Failed to download panel sources.${NC}"
+        rm -rf "$TMP_PANEL"
+        return 1
+    fi
+    tar -xzf "$TMP_PANEL/panel.tgz" -C "$TMP_PANEL"
+    SRC="$TMP_PANEL/GRE-FRP-${PANEL_BRANCH}/panel"
+    if [[ ! -f "$SRC/main.go" ]]; then
+        # tarball top-level name may differ; find main.go instead
+        SRC="$(dirname "$(find "$TMP_PANEL" -name main.go -path '*panel*' | head -1)")"
+    fi
+    (cd "$SRC" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$PANEL_BIN" .)
+    chmod +x "$PANEL_BIN"
+    if [[ -f "$SRC/grepanel" ]]; then
+        cp "$SRC/grepanel" /usr/local/bin/grepanel
+        chmod +x /usr/local/bin/grepanel
+    fi
+    rm -rf "$TMP_PANEL"
+
+    cat > /etc/systemd/system/gre-panel.service <<EOF
+[Unit]
+Description=GRE-FRP Web Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5s
+ExecStart=${PANEL_BIN}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable gre-panel >/dev/null 2>&1
+    systemctl restart gre-panel
+    sleep 2
+
+    if systemctl is-active --quiet gre-panel; then
+        echo -e "${GREEN}[✔️] Panel installed and running.${NC}"
+        show_panel_url
+    else
+        echo -e "${RED}[!] Panel failed to start — see: journalctl -u gre-panel${NC}"
+        return 1
+    fi
+}
+
+show_panel_url() {
+    local port base
+    port=$(grep -o '"port": [0-9]*' /etc/gre-panel/panel.json 2>/dev/null | grep -o '[0-9]*')
+    base=$(grep -o '"base_path": "[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
+    port=${port:-7777}
+    echo -e "${GREEN}Panel URL: ${CYAN}http://<this-server-ip>:${port}/${base}${NC}"
+    echo -e "${YELLOW}Password is in the install log above (admin user).${NC}"
+}
+
 main_menu() {
     clear
     echo -e "${CYAN}"
@@ -398,9 +470,11 @@ main_menu() {
     echo "4) View FRP Live Logs"
     echo "5) Restart Tunnel Services"
     echo "6) Uninstall Everything (GRE + FRP)"
+    echo "7) Install Web Panel (control GRE+FRP from browser)"
+    echo "8) Show Panel URL"
     echo "0) Exit"
     echo ""
-    read -p "Select an option [0-6]: " OPTION
+    read -p "Select an option [0-8]: " OPTION
 
     case "$OPTION" in
         1)
@@ -420,6 +494,12 @@ main_menu() {
             ;;
         6)
             uninstall_all
+            ;;
+        7)
+            install_panel
+            ;;
+        8)
+            show_panel_url
             ;;
         0)
             echo "Exiting..."
