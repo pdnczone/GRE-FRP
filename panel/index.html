@@ -43,7 +43,7 @@
   .topbar h1 { font-size:var(--fs-h2); margin:0; }
   .topbar .sub { color:var(--mu); font-size:var(--fs-small); }
   .topbar .acts { margin-left:auto; display:flex; gap:8px; }
-  .page { max-width:860px; margin:0 auto; padding:20px; width:100%; display:grid; gap:16px; padding-bottom:72px; }
+  .page { max-width:1120px; margin:0 auto; padding:20px; width:100%; display:grid; gap:16px; padding-bottom:72px; }
   .tunnel-card, .qs { background:var(--s1); border:1px solid var(--ln); border-radius:12px;
     padding:16px; display:flex; flex-direction:column; gap:12px; }
   .tunnel-card:hover { border-color:var(--ln2); }
@@ -95,8 +95,30 @@
   pre.logs { background:var(--sunk); border:1px solid var(--ln); border-radius:10px; padding:14px;
     overflow:auto; max-height:340px; font-size:12.5px; line-height:1.6;
     font-family:var(--font-mono); color:var(--tx2); margin:0; white-space:pre-wrap; }
-  .dash-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+  .dash-grid { display:grid; grid-template-columns:repeat(12,1fr); gap:12px; }
+  .kpi { grid-column:span 3; }
   .dash-span { grid-column:1 / -1; }
+  @media (max-width:900px) { .kpi { grid-column:span 6; } }
+  @media (max-width:560px) { .kpi { grid-column:1 / -1; } }
+  .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .kpi-ico { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; flex:none;
+    background:var(--sunk); border:1px solid var(--ln); color:var(--mu); }
+  .kpi-ico svg { width:15px; height:15px; }
+  .kpi-label { font-size:var(--fs-small); color:var(--mu); font-weight:500; }
+  .kpi-val { font-size:24px; font-weight:700; color:var(--tx); letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums; line-height:1.2; }
+  .kpi-sub { font-size:var(--fs-small); color:var(--dim); }
+  .kpi-sub .pos { color:var(--ok); } .kpi-sub .neg { color:var(--er); }
+  .chart-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .chart-filters { display:flex; gap:4px; padding:4px; border-radius:10px; border:1px solid var(--ln); background:var(--s2); }
+  .chart-filters button { border:0; background:transparent; color:var(--mu); border-radius:7px;
+    padding:6px 12px; font-size:var(--fs-small); font-weight:600; cursor:pointer; }
+  .chart-filters button[aria-pressed="true"] { background:var(--tx); color:var(--bg); }
+  #trafficChart { width:100%; height:220px; display:block; }
+  .chart-legend { display:flex; gap:16px; font-size:var(--fs-small); color:var(--mu); flex-wrap:wrap; }
+  .chart-legend .sw { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  .sysbar { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; }
+  .sysbar > i { display:block; height:100%; border-radius:3px; background:var(--ac); }
   .dash-big { font-size:24px; font-weight:700; color:var(--tx); letter-spacing:-.02em;
     font-variant-numeric:tabular-nums; }
   .dash-rows { display:grid; gap:4px; font-size:var(--fs-body); color:var(--tx2); }
@@ -248,17 +270,63 @@
     <main class="page">
       <section id="tab-dashboard">
         <div class="dash-grid" id="dashGrid">
-          <div class="tunnel-card dash-span"><div class="tc-header"><p class="tc-title">Status</p><span class="status-indicator" id="dashDot"><span class="dot"></span><span id="dashDotTxt">—</span></span></div><div class="dash-big" id="dashState">—</div><div class="qs-hint" id="dashChecked">—</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Ping</p></div><div class="dash-big" id="dashPing">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Traffic</p></div><div class="dash-big" id="dashTotal">N/A</div><div class="qs-hint" id="dashUpDown">—</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">GRE</p></div><div id="dashGre" class="dash-rows">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">FRP</p></div><div id="dashFrp" class="dash-rows">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">IPs</p></div><div id="dashIps" class="dash-rows">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">CPU</p></div><div class="dash-big" id="dashCpu">N/A</div><div class="qs-hint" id="dashLoad">—</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">RAM</p></div><div class="dash-big" id="dashRam">N/A</div><div class="qs-hint" id="dashRamDet">—</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Disk</p></div><div class="dash-big" id="dashDisk">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Connections</p></div><div class="dash-big" id="dashConns">N/A</div></div>
-          <div class="tunnel-card"><div class="tc-header"><p class="tc-title">Uptime</p></div><div id="dashUp" class="dash-rows">N/A</div></div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Total Traffic</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span></div>
+            <div class="kpi-val" id="kpiTraffic">N/A</div>
+            <div class="kpi-sub" id="kpiTrafficSub">↑ — · ↓ —</div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Tunnel Status</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span></div>
+            <div class="kpi-val" id="kpiStatus">—</div>
+            <div class="kpi-sub" id="kpiStatusSub">—</div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Links (GRE / FRP)</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span></div>
+            <div class="kpi-val" id="kpiLinks">—</div>
+            <div class="kpi-sub" id="kpiLinksSub">—</div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Latency</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg></span></div>
+            <div class="kpi-val" id="kpiPing">N/A</div>
+            <div class="kpi-sub" id="kpiPingSub">—</div>
+          </div>
+          <div class="tunnel-card dash-span">
+            <div class="chart-head">
+              <div><p class="tc-title">Total Traffic &amp; Activity</p><div class="qs-hint" id="chartHint">Throughput over time (from interface counters)</div></div>
+              <div class="chart-filters" role="group" aria-label="Range">
+                <button data-range="7d" aria-pressed="true">7D</button>
+                <button data-range="30d" aria-pressed="false">30D</button>
+                <button data-range="90d" aria-pressed="false">90D</button>
+              </div>
+            </div>
+            <canvas id="trafficChart" height="220"></canvas>
+            <div class="chart-legend"><span><i class="sw" style="background:#38bdf8"></i>Download</span><span><i class="sw" style="background:#a78bfa"></i>Upload</span></div>
+            <div class="warnbox hidden" id="tunnelWarn"></div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">CPU</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span></div>
+            <div class="kpi-val" id="kpiCpu">N/A</div>
+            <div class="kpi-sub" id="kpiCpuSub">—</div>
+            <div class="sysbar"><i id="cpuBar" style="width:0%"></i></div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">RAM</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 7v10h16V7M4 7l2-3h12l2 3"/></svg></span></div>
+            <div class="kpi-val" id="kpiRam">N/A</div>
+            <div class="kpi-sub" id="kpiRamSub">—</div>
+            <div class="sysbar"><i id="ramBar" style="width:0%"></i></div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Disk</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg></span></div>
+            <div class="kpi-val" id="kpiDisk">N/A</div>
+            <div class="kpi-sub" id="kpiDiskSub">—</div>
+            <div class="sysbar"><i id="diskBar" style="width:0%"></i></div>
+          </div>
+          <div class="tunnel-card kpi">
+            <div class="kpi-top"><span class="kpi-label">Uptime / Conns</span><span class="kpi-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span></div>
+            <div class="kpi-val" id="kpiUp">N/A</div>
+            <div class="kpi-sub" id="kpiUpSub">—</div>
+          </div>
+          <div class="tunnel-card dash-span"><div class="tc-header"><p class="tc-title">Details</p><span class="qs-hint" id="dashChecked">—</span></div><div class="dash-rows" id="dashDetails">N/A</div></div>
         </div>
       </section>
       <section id="tab-tunnel" hidden>
@@ -419,6 +487,13 @@ const fmtBytes = n => {
   while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
   return (i === 0 ? v : v.toFixed(1)) + ' ' + u[i];
 };
+const fmtRate = bps => {
+  if (bps == null || !isFinite(bps)) return NA;
+  const u = ['B/s','KB/s','MB/s','GB/s'];
+  let i = 0, v = bps;
+  while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
+  return v.toFixed(1) + ' ' + u[i];
+};
 const fmtSecs = s => {
   if (s == null) return NA;
   const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
@@ -427,33 +502,126 @@ const fmtSecs = s => {
   return m + 'm';
 };
 const dr = (k, v) => `<div class="dr"><span class="k">${esc(k)}</span><span>${esc(v ?? NA)}</span></div>`;
+let dashRange = '7d';
+document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => {
+  dashRange = b.dataset.range;
+  document.querySelectorAll('[data-range]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  refreshDash();
+});
+// Throughput line chart (canvas, no deps): cumulative counters -> per-interval rate.
+function drawChart(hist) {
+  const cv = $('trafficChart');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || cv.parentElement.clientWidth || 600, H = 220;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+  const padL = 8, padR = 8, padT = 12, padB = 22;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const pts = (hist || []).filter(p => p.t != null);
+  if (pts.length < 2) {
+    ctx.fillStyle = '#71717a'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(pts.length === 0 ? 'No history yet — collecting every 5s while the panel runs' : 'Collecting… need at least 2 samples', W/2, H/2);
+    return;
+  }
+  // per-interval bytes/sec for up & down
+  const series = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i-1], b = pts[i];
+    const dt = (b.t - a.t) || 1;
+    if (a.down == null || b.down == null || a.up == null || b.up == null) { series.push(null); continue; }
+    let dd = (b.down - a.down) / dt, du = (b.up - a.up) / dt;
+    if (dd < 0 || du < 0) { series.push(null); continue; } // counter reset
+    series.push({t: b.t, down: dd, up: du});
+  }
+  const vals = series.filter(Boolean);
+  if (!vals.length) {
+    ctx.fillStyle = '#71717a'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Waiting for traffic…', W/2, H/2);
+    return;
+  }
+  let max = 0;
+  vals.forEach(p => { max = Math.max(max, p.down, p.up); });
+  max = max * 1.15 || 1;
+  const X = i => padL + (i / (series.length - 1 || 1)) * iw;
+  const Y = v => padT + ih - (v / max) * ih;
+  // gridlines (3)
+  ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#71717a'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  for (let g = 0; g <= 3; g++) {
+    const y = padT + ih * g / 3, val = max * (1 - g / 3);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillText(fmtRate(val), padL + 2, y - 3);
+  }
+  const line = (key, color, fill) => {
+    ctx.beginPath();
+    let started = false;
+    series.forEach((p, i) => {
+      if (!p) { started = false; return; }
+      const x = X(i), y = Y(p[key]);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    if (fill) {
+      ctx.lineTo(X(series.length - 1), padT + ih); ctx.lineTo(X(0), padT + ih); ctx.closePath();
+      const gr = ctx.createLinearGradient(0, padT, 0, padT + ih);
+      gr.addColorStop(0, color + '44'); gr.addColorStop(1, color + '00');
+      ctx.fillStyle = gr; ctx.fill();
+    }
+  };
+  line('down', '#38bdf8', true);
+  line('up', '#a78bfa', false);
+  // x labels: first / mid / last timestamps
+  const fmtT = t => { const d = new Date(t * 1000); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
+  ctx.fillStyle = '#71717a'; ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left'; ctx.fillText(fmtT(pts[0].t), padL, H - 6);
+  ctx.textAlign = 'right'; ctx.fillText(fmtT(pts[pts.length-1].t), W - padR, H - 6);
+}
 async function refreshDash() {
   try {
-    const d = await api('/api/dashboard');
+    const d = await api('/api/dashboard?range=' + dashRange);
     const on = !!d.online;
-    $('dashState').textContent = on ? '● Online' : '● Offline';
-    $('dashState').style.color = on ? 'var(--ok)' : 'var(--er)';
-    const dd = $('dashDot');
-    if (dd) { dd.className = 'status-indicator ' + (on ? 'active' : 'offline'); $('dashDotTxt').textContent = on ? 'up' : 'down'; }
-    $('dashPing').textContent = d.ping_ok && d.ping ? d.ping : NA;
+    $('kpiStatus').textContent = on ? 'Online' : 'Offline';
+    $('kpiStatus').style.color = on ? 'var(--ok)' : 'var(--er)';
+    $('kpiStatusSub').textContent = (d.role || 'unknown role') + ' · ' + (d.checked ? 'checked ' + d.checked.slice(11, 19) + ' UTC' : '');
+    const g = d.gre || {}, f = d.frp || {};
+    const greUp = !!g.exists, frpUp = !!f.up;
+    $('kpiLinks').textContent = (greUp ? 'GRE ●' : 'GRE ○') + '  ' + (frpUp ? 'FRP ●' : 'FRP ○');
+    $('kpiLinks').style.color = (greUp && frpUp) ? 'var(--ok)' : (greUp || frpUp) ? 'var(--wr)' : 'var(--er)';
+    $('kpiLinksSub').textContent = (f.svc || 'no frp') + ((f.proxies || []).length ? ' · ' + f.proxies.length + ' proxies' : '') + ' · ' + (g.inner || 'no gre ip');
+    const ms = d.ping_ok && d.ping ? parseFloat(d.ping) : null;
+    $('kpiPing').textContent = d.ping_ok && d.ping ? d.ping : NA;
+    $('kpiPingSub').textContent = ms == null ? 'no answer' : ms < 80 ? 'Optimal' : ms < 200 ? 'Good' : 'High';
+    $('kpiPingSub').innerHTML = ms == null ? 'no answer' : ms < 80 ? '<span class="pos">● Optimal</span>' : ms < 200 ? '<span class="pos">● Good</span>' : '<span class="neg">● High</span>';
     const t = d.traffic || {};
-    $('dashTotal').textContent = fmtBytes(t.total);
-    $('dashUpDown').textContent = '↑ ' + fmtBytes(t.up) + '  ↓ ' + fmtBytes(t.down);
-    const g = d.gre || {};
-    $('dashGre').innerHTML = dr('Link', g.exists ? 'up' : 'down') + dr('Inner', g.inner) + dr('Peer', g.peer);
-    const f = d.frp || {};
-    $('dashFrp').innerHTML = dr('Service', f.up ? (f.svc + ' ●') : 'down') + dr('Port', f.port) + dr('Proxies', (f.proxies||[]).join(', ') || '—');
-    $('dashIps').innerHTML = dr('Public', d.local_pub) + dr('GRE local', g.local) + dr('GRE peer', g.peer) + dr('Role', d.role);
+    $('kpiTraffic').textContent = fmtBytes(t.total);
+    $('kpiTrafficSub').textContent = '↑ ' + fmtBytes(t.up) + '  ·  ↓ ' + fmtBytes(t.down);
+    drawChart(d.history);
+    const w = $('tunnelWarn');
+    if (!on) { w.innerHTML = '⚠️ <b>Tunnel is not running.</b> Go to Setup to configure GRE + FRP, or check the Tunnel tab.'; w.classList.remove('hidden'); }
+    else w.classList.add('hidden');
     const s = d.system || {};
-    $('dashCpu').textContent = s.cpu_pct != null ? s.cpu_pct + '%' : NA;
-    $('dashLoad').textContent = 'load ' + (s.load || NA) + ' · ' + (s.cores || '?') + ' cores';
-    const m = (s.mem) || {};
-    $('dashRam').textContent = m.pct != null ? m.pct + '%' : NA;
-    $('dashRamDet').textContent = m.used != null ? fmtBytes(m.used) + ' / ' + fmtBytes(m.total) : '—';
-    $('dashDisk').textContent = s.disk_pct != null ? s.disk_pct + '%' : NA;
-    $('dashConns').textContent = d.conns != null ? d.conns : NA;
+    const cpu = s.cpu_pct != null ? parseFloat(s.cpu_pct) : null;
+    $('kpiCpu').textContent = cpu != null ? cpu.toFixed(1) + '%' : NA;
+    $('kpiCpuSub').textContent = 'load ' + (s.load || NA) + ' · ' + (s.cores || '?') + ' cores';
+    $('cpuBar').style.width = (cpu != null ? Math.min(100, cpu) : 0) + '%';
+    const m = s.mem || {};
+    const memp = m.pct != null ? parseFloat(m.pct) : null;
+    $('kpiRam').textContent = memp != null ? memp.toFixed(1) + '%' : NA;
+    $('kpiRamSub').textContent = m.used != null ? fmtBytes(m.used) + ' / ' + fmtBytes(m.total) : '—';
+    $('ramBar').style.width = (memp != null ? Math.min(100, memp) : 0) + '%';
+    const dp = s.disk_pct != null ? parseFloat(s.disk_pct) : null;
+    $('kpiDisk').textContent = dp != null ? dp.toFixed(1) + '%' : NA;
+    $('kpiDiskSub').textContent = 'root partition';
+    $('diskBar').style.width = (dp != null ? Math.min(100, dp) : 0) + '%';
     const u = d.uptime || {};
-    $('dashUp').innerHTML = dr('System', fmtSecs(u.system)) + dr('Panel', fmtSecs(u.panel)) + (u.frp_since ? dr('FRP since', u.frp_since) : '');
+    $('kpiUp').textContent = fmtSecs(u.system);
+    $('kpiUpSub').textContent = 'panel ' + fmtSecs(u.panel) + ' · ' + (d.conns != null ? d.conns + ' conns' : 'conns N/A');
+    $('dashDetails').innerHTML = dr('Public IP', d.local_pub) + dr('GRE local', g.local) + dr('GRE peer', g.peer)
+      + dr('GRE inner', g.inner) + dr('FRP service', f.up ? f.svc : 'down') + dr('FRP port', f.port)
+      + dr('Proxies', (f.proxies || []).join(', ') || '—') + dr('Role', d.role)
+      + (u.frp_since ? dr('FRP since', u.frp_since) : '');
     $('dashChecked').textContent = 'last check: ' + (d.checked || '—');
   } catch(e) { /* keep old values; N/A already default */ }
 }

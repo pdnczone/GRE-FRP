@@ -6,10 +6,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,6 +37,8 @@ type cpuSample struct {
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	st := localStatus()
+	traffic := greTraffic()
+	recordTrafficSample(traffic)
 	d := map[string]any{
 		"online":     st.Gre.Exists || st.FrpUp,
 		"ping_ok":    st.PingOK,
@@ -53,7 +57,8 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 			"port":    nilIfZero(st.FrpPort),
 			"proxies": st.Proxies,
 		},
-		"traffic": greTraffic(),
+		"traffic": traffic,
+		"history": trafficHistory(r.URL.Query().Get("range")),
 		"uptime":  uptimeInfo(st),
 		"system":  systemInfo(),
 		"conns":   activeConns(),
@@ -275,4 +280,109 @@ func activeConns() any {
 	}
 	// ss always prints a header; n counts real connections.
 	return n
+}
+
+// ---- traffic history: cumulative rx/tx sampled into a ring on disk ----
+
+type trafficPoint struct {
+	T     int64  `json:"t"`
+	Up    *uint64 `json:"up"`
+	Down  *uint64 `json:"down"`
+	Total *uint64 `json:"total"`
+}
+
+var (
+	histMu     sync.Mutex
+	histCached []trafficPoint
+	histLoaded bool
+)
+
+func historyFile() string { return filepath.Join(configDir, "traffic.json") }
+
+func loadHistory() []trafficPoint {
+	if histLoaded {
+		return histCached
+	}
+	histLoaded = true
+	data, err := os.ReadFile(historyFile())
+	if err == nil {
+		_ = json.Unmarshal(data, &histCached)
+	}
+	return histCached
+}
+
+func saveHistoryLocked() {
+	_ = os.WriteFile(historyFile(), mustJSON(histCached), 0600)
+}
+
+// recordTrafficSample appends one point per dashboard poll (5s). Points are
+// cumulative counters, so rate = delta between neighbours. Cap 90 days.
+func recordTrafficSample(traffic map[string]any) {
+	histMu.Lock()
+	defer histMu.Unlock()
+	hist := loadHistory()
+	now := time.Now().Unix()
+	if n := len(hist); n > 0 && now-hist[n-1].T < 4 {
+		return // same poll, don't double-record
+	}
+	pt := trafficPoint{T: now}
+	if v, ok := traffic["up"].(uint64); ok {
+		c := v
+		pt.Up = &c
+	}
+	if v, ok := traffic["down"].(uint64); ok {
+		c := v
+		pt.Down = &c
+	}
+	if v, ok := traffic["total"].(uint64); ok {
+		c := v
+		pt.Total = &c
+	}
+	hist = append(hist, pt)
+	cutoff := now - 90*86400
+	i := 0
+	for i < len(hist) && hist[i].T < cutoff {
+		i++
+	}
+	if i > 0 {
+		hist = append([]trafficPoint(nil), hist[i:]...)
+	}
+	histCached = hist
+	saveHistoryLocked()
+}
+
+// trafficHistory returns downsampled points for range=7d|30d|90d (default 7d).
+// Missing interface (tunnel down) yields gaps: points with null values.
+func trafficHistory(rng string) []trafficPoint {
+	histMu.Lock()
+	defer histMu.Unlock()
+	hist := loadHistory()
+	now := time.Now().Unix()
+	span := int64(7 * 86400)
+	switch rng {
+	case "30d":
+		span = 30 * 86400
+	case "90d":
+		span = 90 * 86400
+	}
+	cutoff := now - span
+	var in []trafficPoint
+	for _, p := range hist {
+		if p.T >= cutoff {
+			in = append(in, p)
+		}
+	}
+	maxPts := 240
+	if len(in) <= maxPts {
+		if in == nil {
+			return []trafficPoint{}
+		}
+		return in
+	}
+	step := float64(len(in)) / float64(maxPts)
+	out := make([]trafficPoint, 0, maxPts)
+	for i := 0; i < maxPts; i++ {
+		out = append(out, in[int(float64(i)*step)])
+	}
+	return out
 }
