@@ -9,98 +9,104 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="base.css">
+<script>
+  /* Theme before first paint so a dark panel never flashes white (hashem-style). */
+  try {
+    var t = localStorage.getItem('gre_theme') || 'dark';
+    document.documentElement.dataset.t = t;
+    document.addEventListener('DOMContentLoaded', function () { document.body.dataset.t = t; });
+  } catch (e) {}
+</script>
 <style>
-  :root {
-    color-scheme: light dark;
-    --ok:#30d158; --warn:#ff9f0a; --bad:#ff453a;
-    --accent:#0a84ff;
-    --bg:#f2f2f7; --bg-elev:#ffffff;
-    --card:#ffffff; --card-border:rgba(0,0,0,.06);
-    --txt:#1c1c1e; --txt-sub:#636366; --muted:#8e8e93;
-    --row-sep:rgba(0,0,0,.06);
-    --field:#ffffff; --field-border:rgba(0,0,0,.12);
-    --ghost:#e9e9ee; --ghost-txt:#0a84ff;
-    --term:#1c1c1e;
-    --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
-    --radius:16px;
+  body { min-height:100dvh; background:var(--bg); }
+  .app-layout { display:flex; min-height:100dvh; width:100%; background:var(--bg); }
+  .sidebar { width:236px; background:var(--sidebar-bg); border-right:1px solid var(--ln);
+    display:flex; flex-direction:column; position:sticky; top:0; height:100dvh; z-index:50; flex-shrink:0; }
+  .sidebar-brand { padding:20px 16px 14px; display:flex; flex-direction:column; align-items:center;
+    gap:8px; border-bottom:1px solid var(--ln); }
+  .sidebar-brand .brand-name { font-size:var(--fs-h4); font-weight:700; letter-spacing:.05em; color:var(--tx); }
+  .brand-mustache { display:block; transition:transform .28s cubic-bezier(.16,1,.3,1); }
+  .sidebar-brand:hover .brand-mustache { transform:translateY(-2px) scale(1.06); }
+  .sidebar-nav { padding:12px; display:flex; flex-direction:column; gap:4px; flex:1; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:10px;
+    border:0; background:transparent; color:var(--mu); font-size:var(--fs-body); font-weight:590;
+    cursor:pointer; text-align:left; width:100%; transition:background .15s,color .15s; }
+  .nav-item svg { width:16px; height:16px; flex:none; }
+  .nav-item:hover { background:var(--sunk); color:var(--tx2); }
+  .nav-item.on { background:var(--s2); color:var(--tx); box-shadow:inset 0 0 0 1px var(--ln); }
+  .sidebar-foot { padding:12px; border-top:1px solid var(--ln); display:flex; gap:8px; }
+  .main { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:12px;
+    padding:14px 20px; border-bottom:1px solid var(--ln);
+    background:var(--topbar-bg); backdrop-filter:blur(16px) saturate(140%);
+    -webkit-backdrop-filter:blur(16px) saturate(140%); }
+  .topbar h1 { font-size:var(--fs-h2); margin:0; }
+  .topbar .sub { color:var(--mu); font-size:var(--fs-small); }
+  .topbar .acts { margin-left:auto; display:flex; gap:8px; }
+  .page { max-width:860px; margin:0 auto; padding:20px; width:100%; display:grid; gap:16px; padding-bottom:72px; }
+  .tunnel-card, .qs { background:var(--s1); border:1px solid var(--ln); border-radius:12px;
+    padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .tunnel-card:hover { border-color:var(--ln2); }
+  .tc-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .tc-title { font-size:15px; font-weight:600; color:var(--tx); margin:0; }
+  .status-indicator { display:inline-flex; align-items:center; gap:8px; font-size:var(--fs-small); font-weight:500; }
+  .status-indicator .dot { width:7px; height:7px; border-radius:50%; }
+  .status-indicator.active { color:var(--tx2); }
+  .status-indicator.active .dot { background:#60a5fa; box-shadow:0 0 8px rgba(96,165,250,.6); }
+  .status-indicator.offline { color:var(--dim); }
+  .status-indicator.offline .dot { background:#52525b; }
+  .trow { display:flex; justify-content:space-between; gap:12px; padding:9px 0;
+    border-bottom:1px solid var(--ln); font-size:var(--fs-body); }
+  .trow:last-child { border:0; }
+  .trow .k { color:var(--mu); } .trow .v { color:var(--tx2); text-align:right; font-variant-numeric:tabular-nums; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .up { background:var(--ok); color:var(--ok); } .down { background:var(--er); color:var(--er); }
+  .qs-head { display:flex; gap:12px; align-items:flex-start; }
+  .qs-bolt { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex:none;
+    background:var(--ac-soft); color:var(--ac); }
+  .qs-titles b { display:block; color:var(--tx); font-size:var(--fs-h4); }
+  .qs-titles span { color:var(--mu); font-size:var(--fs-small); }
+  .qs-diagram { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:var(--fs-small); color:var(--mu); }
+  .qs-node-box { background:var(--sunk); border:1px solid var(--ln); border-radius:8px; padding:6px 10px; color:var(--tx2); }
+  .qs-node-box b { display:block; font-size:var(--fs-caption); color:var(--dim); font-weight:500; }
+  .qs-node-box.on { border-color:var(--ln2); }
+  .qs-line-link { font-variant-numeric:tabular-nums; }
+  .qs-step { display:flex; gap:12px; }
+  .qs-num { width:24px; height:24px; border-radius:50%; flex:none; display:grid; place-items:center;
+    background:var(--sunk); border:1px solid var(--ln2); color:var(--tx2); font-size:var(--fs-small); font-weight:700; }
+  .qs-body { flex:1; min-width:0; display:grid; gap:10px; }
+  .qs-label { font-size:var(--fs-body); font-weight:600; color:var(--tx); }
+  .qs-hint { font-size:var(--fs-small); color:var(--dim); }
+  .qs-seg { display:flex; gap:4px; padding:4px; border-radius:12px; border:1px solid var(--ln); background:var(--s2); }
+  .qs-seg button { flex:1; border:0; background:transparent; color:var(--mu); border-radius:8px;
+    padding:8px 10px; font-size:var(--fs-body); font-weight:590; cursor:pointer; }
+  .qs-seg button:hover { color:var(--tx2); }
+  .qs-seg button[aria-pressed="true"] { background:var(--tx); color:var(--bg); }
+  .qs-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:640px) { .qs-row { grid-template-columns:1fr; } }
+  .fg { display:grid; gap:6px; font-size:var(--fs-small); color:var(--mu); }
+  .qs-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .warnbox { background:color-mix(in srgb,var(--wr) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--wr) 45%,transparent);
+    border-radius:10px; padding:10px 12px; font-size:var(--fs-body); color:var(--tx2); }
+  .tokenbox { background:color-mix(in srgb,var(--ok) 10%,transparent);
+    border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);
+    border-radius:10px; padding:10px 12px; font-size:var(--fs-body); word-break:break-all; color:var(--tx2); }
+  pre.logs { background:var(--sunk); border:1px solid var(--ln); border-radius:10px; padding:14px;
+    overflow:auto; max-height:340px; font-size:12.5px; line-height:1.6;
+    font-family:var(--font-mono); color:var(--tx2); margin:0; white-space:pre-wrap; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:99;
+    background:var(--s2); color:var(--tx); border:1px solid var(--ln2);
+    padding:10px 16px; border-radius:10px; box-shadow:var(--lift); }
+  @media (max-width:760px) {
+    .sidebar { display:none; }
+    .mobnav { display:flex !important; }
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ok:#30d158; --warn:#ff9f0a; --bad:#ff453a;
-      --accent:#0a84ff;
-      --bg:#0a0e17; --bg-elev:#141824;
-      --card:rgba(255,255,255,.055); --card-border:rgba(255,255,255,.1);
-      --txt:#f2f2f7; --txt-sub:#98989f; --muted:#8e8e93;
-      --row-sep:rgba(255,255,255,.07);
-      --field:rgba(255,255,255,.07); --field-border:rgba(255,255,255,.14);
-      --ghost:rgba(255,255,255,.12); --ghost-txt:#fff;
-      --term:#000;
-      --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
-    }
-  }
-  * { box-sizing:border-box; }
-  html { -webkit-text-size-adjust:100%; }
-  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",sans-serif;
-    background:var(--bg); color:var(--txt); min-height:100vh;
-    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
-  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
-  header { display:flex; align-items:center; gap:12px; padding:14px 20px;
-    border-bottom:1px solid var(--card-border); position:sticky; top:0; z-index:10;
-    background:color-mix(in srgb, var(--bg) 82%, transparent);
-    backdrop-filter:saturate(1.6) blur(20px); -webkit-backdrop-filter:saturate(1.6) blur(20px); }
-  .brand { width:34px; height:34px; border-radius:10px; flex:none;
-    background:linear-gradient(135deg,#0284c7,#2563eb);
-    display:grid; place-items:center; box-shadow:0 2px 8px rgba(2,132,199,.35); }
-  header h1 { font-size:20px; margin:0; font-weight:700; letter-spacing:-.02em; }
-  header .sub { color:var(--txt-sub); font-size:12.5px; margin-top:1px; }
-  main { max-width:720px; margin:0 auto; padding:20px 16px 48px; display:grid; gap:16px; }
-  .card { background:var(--card); border:1px solid var(--card-border);
-    border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); }
-  .card h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.07em;
-    color:var(--muted); margin:0 0 10px; }
-  .row { display:flex; justify-content:space-between; align-items:center; gap:12px;
-    padding:9px 0; border-bottom:1px solid var(--row-sep); font-size:14.5px; }
-  .row:last-child { border-bottom:0; }
-  .k { color:var(--txt-sub); flex:none; } .v { font-variant-numeric:tabular-nums; text-align:right; font-weight:500; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px;
-    box-shadow:0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
-  .up { background:var(--ok); color:var(--ok); } .down { background:var(--bad); color:var(--bad); } .warn { background:var(--warn); color:var(--warn); }
-  .seg { display:flex; gap:0; background:var(--ghost); border-radius:12px; padding:3px; margin:0 0 14px; }
-  .seg button { flex:1; background:transparent; color:var(--txt-sub); border:0; border-radius:9px;
-    padding:0 10px; min-height:36px; font-size:14px; font-weight:500; cursor:pointer; box-shadow:none; }
-  .seg button[aria-pressed="true"] { background:var(--bg-elev); color:var(--txt);
-    box-shadow:0 1px 4px rgba(0,0,0,.18); font-weight:600; }
-  .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
-  button, input { font:inherit; }
-  button { background:var(--accent); color:#fff; border:0; border-radius:12px;
-    padding:0 18px; min-height:44px; font-size:15px; font-weight:600; cursor:pointer;
-    box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
-    transition:transform .15s ease, opacity .15s ease, box-shadow .15s ease; touch-action:manipulation; }
-  button:hover { opacity:.94; } button:active { transform:scale(.98); }
-  button.ghost { background:var(--ghost); color:var(--ghost-txt); box-shadow:none; }
-  @media (prefers-color-scheme: light) { button.ghost { color:var(--accent); } }
-  button.danger { background:var(--bad); }
-  button:disabled { opacity:.45; }
-  input { background:var(--field); border:1px solid var(--field-border);
-    border-radius:10px; padding:11px 12px; color:var(--txt); width:100%; font-size:15px;
-    transition:border-color .15s, box-shadow .15s; }
-  input::placeholder { color:var(--muted); }
-  input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); outline:none; }
-  label { display:grid; gap:6px; font-size:13px; font-weight:500; color:var(--txt-sub); margin-bottom:10px; }
-  pre { background:var(--term); color:#e8e8ed; border-radius:12px; padding:14px; overflow:auto;
-    max-height:320px; font-size:12.5px; line-height:1.6;
-    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
-  @media (prefers-color-scheme: light) { pre { color:#f2f2f7; } }
-  .note { font-size:13px; color:var(--txt-sub); background:color-mix(in srgb, var(--accent) 8%, transparent);
-    border:1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-    border-radius:12px; padding:10px 12px; margin:0 0 12px; }
-  .warnbox { background:rgba(255,159,10,.12); border:1px solid rgba(255,159,10,.45);
-    border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:13.5px; }
-  .tokenbox { background:rgba(48,209,88,.1); border:1px solid rgba(48,209,88,.45);
-    border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:13.5px; word-break:break-all; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  @media (max-width:480px) { .grid2 { grid-template-columns:1fr; } main { padding:16px 12px 40px; } }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none!important; transition:none!important; } }
+  .mobnav { display:none; gap:4px; padding:8px 12px; border-bottom:1px solid var(--ln);
+    background:var(--s1); position:sticky; top:57px; z-index:15; }
+  .mobnav button { flex:1; border:0; background:transparent; color:var(--mu); border-radius:8px;
+    padding:9px 6px; font-size:13px; font-weight:600; cursor:pointer; }
+  .mobnav button.on { background:var(--s3); color:var(--tx); }
   #login { position:fixed; inset:0; z-index:50; display:grid; place-items:center;
     background:#09090b; color:#f4f4f5; min-height:100dvh; overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
@@ -152,7 +158,7 @@
     background:#222; padding:10px 16px; border-radius:8px; }
 </style>
 </head>
-<body>
+<body data-t="dark">
 
 <div id="login" class="hidden">
   <canvas id="kineticGrid" aria-hidden="true"></canvas>
@@ -199,62 +205,119 @@
 </div>
 
 <div id="app" class="hidden">
-<header>
-  <div class="brand" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 100 100" fill="none"><path d="M50 48 C42 38 26 32 12 42 C4 48 1 56 3 62 C6 60 12 54 20 55 C32 56 42 60 50 52 C58 60 68 56 80 55 C88 54 94 60 97 62 C99 56 96 48 88 42 C74 32 58 38 50 48 Z" fill="#fff"/></svg></div>
-  <div><h1>GRE-FRP</h1><div class="sub" id="roleLine">—</div></div>
-  <div style="margin-left:auto" class="btns">
-    <button class="ghost" id="refreshBtn">Refresh</button>
-    <button class="ghost" id="logoutBtn">Logout</button>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg class="brand-mustache" width="52" height="52" viewBox="0 0 100 100" fill="none">
+        <rect width="100" height="100" rx="22" fill="#090d16" stroke="rgba(56,189,248,0.25)" stroke-width="1.5"/>
+        <path d="M50 48 C42 38 26 32 12 42 C4 48 1 56 3 62 C6 60 12 54 20 55 C32 56 42 60 50 52 C58 60 68 56 80 55 C88 54 94 60 97 62 C99 56 96 48 88 42 C74 32 58 38 50 48 Z" fill="#38bdf8"/>
+      </svg>
+      <span class="brand-name">GRE-FRP</span>
+    </div>
+    <nav class="sidebar-nav" id="sideNav">
+      <button class="nav-item on" data-tab="tunnel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg><span>Tunnel</span></button>
+      <button class="nav-item" data-tab="setup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Setup</span></button>
+      <button class="nav-item" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Logs</span></button>
+      <button class="nav-item" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.06-.4.1-.8.1-1.2z"/></svg><span>Settings</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="hashem-btn hashem-btn-secondary" id="themeBtn" style="flex:1">Theme</button>
+      <button class="hashem-btn hashem-btn-ghost" id="logoutBtn">Logout</button>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>GRE-FRP</h1><div class="sub" id="roleLine">—</div></div>
+      <div class="acts"><button class="hashem-btn hashem-btn-secondary" id="refreshBtn">Refresh</button></div>
+    </header>
+    <div class="mobnav" id="mobNav">
+      <button data-tab="tunnel" class="on">Tunnel</button>
+      <button data-tab="setup">Setup</button>
+      <button data-tab="logs">Logs</button>
+      <button data-tab="settings">Settings</button>
+    </div>
+    <main class="page">
+      <section id="tab-tunnel">
+        <div class="tunnel-card">
+          <div class="tc-header"><p class="tc-title">Tunnel status</p><span class="status-indicator" id="tunnelDot"><span class="dot"></span><span id="tunnelDotTxt">—</span></span></div>
+          <div id="tunnel"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+            <button class="hashem-btn hashem-btn-secondary" data-act="ping">Ping peer</button>
+            <button class="hashem-btn hashem-btn-secondary" data-act="restart-gre">Restart GRE</button>
+            <button class="hashem-btn hashem-btn-secondary" data-act="restart-frps">Restart frps</button>
+            <button class="hashem-btn hashem-btn-secondary" data-act="restart-frpc">Restart frpc</button>
+          </div>
+          <pre id="actOut" class="logs hidden" style="margin-top:4px"></pre>
+        </div>
+      </section>
+      <section id="tab-setup" hidden>
+        <div class="qs" id="setupCard">
+          <div class="qs-head">
+            <span class="qs-bolt"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+            <div class="qs-titles"><b>Quick setup — GRE + FRP tunnel</b><span>Two servers, one tunnel. Answer on this machine; the Iran side gives you a token to paste on the Foreign side.</span></div>
+          </div>
+          <div class="qs-diagram" aria-hidden="true">
+            <span class="qs-node-box">Users</span><span>→</span>
+            <span class="qs-node-box on">Iran<b>public ports here</b></span>
+            <span class="qs-line-link">GRE ⇄ FRP</span>
+            <span class="qs-node-box on">Foreign<b>the service runs here</b></span>
+          </div>
+          <div class="qs-step"><span class="qs-num">1</span><div class="qs-body">
+            <label class="qs-label">Which server am I on right now?</label>
+            <div class="qs-seg" role="group" aria-label="Server role">
+              <button id="roleIran" aria-pressed="true">Iran — users connect here</button>
+              <button id="roleForeign" aria-pressed="false">Foreign — service runs here</button>
+            </div>
+            <input type="hidden" id="sRole" value="iran">
+            <div class="qs-hint">Pick one. Iran always listens; Foreign always dials.</div>
+          </div></div>
+          <div class="qs-step"><span class="qs-num">2</span><div class="qs-body">
+            <label class="qs-label">The two ends</label>
+            <div class="qs-row">
+              <div class="fg"><label for="sLocalPub">Local public IP (auto-detected, editable)</label><input class="hashem-input" id="sLocalPub" inputmode="decimal"></div>
+              <div class="fg"><label for="sRemotePub">Remote public IP (the other server)</label><input class="hashem-input" id="sRemotePub" inputmode="decimal" placeholder="e.g. 203.0.113.10"></div>
+              <div class="fg"><label for="sLocalGre">Local GRE IP</label><input class="hashem-input" id="sLocalGre" inputmode="decimal"></div>
+              <div class="fg"><label for="sPeerGre">Peer GRE IP</label><input class="hashem-input" id="sPeerGre" inputmode="decimal"></div>
+              <div class="fg"><label for="sFrpPort">Control port</label><input class="hashem-input" id="sFrpPort" inputmode="numeric"></div>
+            </div>
+          </div></div>
+          <div class="qs-step"><span class="qs-num">3</span><div class="qs-body">
+            <label class="qs-label">Token &amp; ports</label>
+            <div id="iranBox"><div class="qs-hint">Token is auto-generated. After setup, copy it to the Foreign side.</div></div>
+            <div id="foreignBox" class="hidden" style="display:grid;gap:10px">
+              <div class="fg"><label for="sToken">Token (from Iran side)</label><input class="hashem-input" id="sToken" autocomplete="off"></div>
+              <div class="fg"><label for="sPorts">Reverse ports (comma-separated)</label><input class="hashem-input" id="sPorts" placeholder="443, 2083, 8080"></div>
+            </div>
+            <div id="setupWarn" class="warnbox hidden"></div>
+            <div id="setupToken" class="tokenbox hidden"></div>
+            <div class="qs-actions">
+              <button class="hashem-btn hashem-btn-primary" id="setupBtn">Apply setup</button>
+              <button class="hashem-btn hashem-btn-danger hidden" id="setupForceBtn">Overwrite anyway</button>
+            </div>
+            <pre id="setupOut" class="logs hidden"></pre>
+          </div></div>
+        </div>
+      </section>
+      <section id="tab-logs" hidden>
+        <div class="tunnel-card">
+          <div class="tc-header"><p class="tc-title">Logs</p></div>
+          <div class="qs-seg" role="group" aria-label="Service">
+            <button data-log="frps" aria-pressed="true">frps</button>
+            <button data-log="frpc" aria-pressed="false">frpc</button>
+          </div>
+          <pre id="logs" class="logs">(pick a service)</pre>
+        </div>
+      </section>
+      <section id="tab-settings" hidden>
+        <div class="tunnel-card">
+          <div class="tc-header"><p class="tc-title">Settings</p></div>
+          <div class="fg"><label for="newPass">New panel password</label><input class="hashem-input" id="newPass" type="password"></div>
+          <div><button class="hashem-btn hashem-btn-primary" id="savePass">Change password</button></div>
+        </div>
+      </section>
+    </main>
   </div>
-</header>
-<main>
-  <div class="card"><h2>Status</h2><div id="tunnel"></div>
-    <div class="btns">
-      <button class="ghost" data-act="ping">Ping peer</button>
-      <button class="ghost" data-act="restart-gre">Restart GRE</button>
-      <button class="ghost" data-act="restart-frps">Restart frps</button>
-      <button class="ghost" data-act="restart-frpc">Restart frpc</button>
-    </div>
-    <pre id="actOut" class="hidden"></pre>
-  </div>
-  <div class="card" id="setupCard"><h2>Setup tunnel</h2>
-    <div class="seg" role="group" aria-label="Server role">
-      <button id="roleIran" aria-pressed="true">🇮🇷 Iran</button>
-      <button id="roleForeign" aria-pressed="false">🌍 Foreign</button>
-    </div>
-    <div id="setupWarn" class="warnbox hidden"></div>
-    <input type="hidden" id="sRole" value="iran">
-    <label>Local public IP (auto-detected, editable)<input id="sLocalPub" inputmode="decimal"></label>
-    <label>Remote public IP (the other server)<input id="sRemotePub" inputmode="decimal" placeholder="e.g. 203.0.113.10"></label>
-    <div class="grid2">
-      <label>Local GRE IP<input id="sLocalGre" inputmode="decimal"></label>
-      <label>Peer GRE IP<input id="sPeerGre" inputmode="decimal"></label>
-    </div>
-    <label>FRP port<input id="sFrpPort" inputmode="numeric"></label>
-    <div id="iranBox"><p class="note">Token is auto-generated. After setup, copy it to the Foreign side.</p></div>
-    <div id="foreignBox" class="hidden">
-      <label>Token (from Iran side)<input id="sToken" autocomplete="off"></label>
-      <label>Reverse ports (comma-separated)<input id="sPorts" placeholder="443, 2083, 8080"></label>
-    </div>
-    <div id="setupToken" class="tokenbox hidden"></div>
-    <div class="btns">
-      <button id="setupBtn">Apply setup</button>
-      <button class="ghost hidden" id="setupForceBtn">Overwrite anyway</button>
-    </div>
-    <pre id="setupOut" class="hidden"></pre>
-  </div>
-  <div class="card"><h2>Logs</h2>
-    <div class="btns">
-      <button class="ghost" data-log="frps">frps</button>
-      <button class="ghost" data-log="frpc">frpc</button>
-    </div>
-    <pre id="logs">(pick a service)</pre>
-  </div>
-  <div class="card"><h2>Settings</h2>
-    <label>New panel password<input id="newPass" type="password"></label>
-    <button id="savePass">Change password</button>
-  </div>
-</main>
+</div>
 </div>
 <div id="toast" class="toast hidden"></div>
 
@@ -280,17 +343,34 @@ async function api(path, body) {
 }
 function showLogin() { $('login').classList.remove('hidden'); $('app').classList.add('hidden'); }
 function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
+// tabs (sidebar + mobile nav)
+function goTab(name) {
+  ['tunnel','setup','logs','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
+  document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+}
+document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+// theme (hashem-style: localStorage + data-t on html and body)
+function setTheme(t) {
+  document.documentElement.dataset.t = t; document.body.dataset.t = t;
+  try { localStorage.setItem('gre_theme', t); } catch(e) {}
+  const b = $('themeBtn'); if (b) b.textContent = t === 'dark' ? '☀️ Light' : '🌙 Dark';
+}
+$('themeBtn').onclick = () => setTheme(document.body.dataset.t === 'dark' ? 'light' : 'dark');
+try { setTheme(localStorage.getItem('gre_theme') || document.body.dataset.t || 'dark'); } catch(e) {}
 
 function dot(ok) { return `<span class="dot ${ok ? 'up' : 'down'}"></span>`; }
 function renderTunnel(st) {
   $('roleLine').textContent = esc(st.role || 'unknown role');
+  const up = !!(st.gre.exists || st.frp_up);
+  const d = $('tunnelDot');
+  if (d) { d.className = 'status-indicator ' + (up ? 'active' : 'offline'); $('tunnelDotTxt').textContent = up ? 'up' : 'down'; }
   $('tunnel').innerHTML = `
-    <div class="row"><span class="k">GRE interface</span><span class="v">${dot(st.gre.exists)}${esc(st.gre.name || 'gre-tunnel')} ${esc(st.gre.inner || '')}</span></div>
-    <div class="row"><span class="k">GRE path</span><span class="v">${esc(st.gre.local || '?')} → ${esc(st.gre.peer_ip || st.gre_peer || '?')}</span></div>
-    <div class="row"><span class="k">GRE ping</span><span class="v">${dot(st.ping_ok)}${esc(st.ping_ms || 'no answer')}</span></div>
-    <div class="row"><span class="k">FRP service</span><span class="v">${dot(st.frp_up)}${esc(st.frp_svc || 'none')}</span></div>
-    <div class="row"><span class="k">FRP port</span><span class="v">${esc(st.frp_port || st.bind_port || '?')}</span></div>
-    <div class="row"><span class="k">Proxies</span><span class="v">${esc((st.proxies || []).join(', ') || '—')}</span></div>`;
+    <div class="trow"><span class="k">GRE interface</span><span class="v">${dot(st.gre.exists)}${esc(st.gre.name || 'gre-tunnel')} ${esc(st.gre.inner || '')}</span></div>
+    <div class="trow"><span class="k">GRE path</span><span class="v">${esc(st.gre.local || '?')} → ${esc(st.gre.peer_ip || st.gre_peer || '?')}</span></div>
+    <div class="trow"><span class="k">GRE ping</span><span class="v">${dot(st.ping_ok)}${esc(st.ping_ms || 'no answer')}</span></div>
+    <div class="trow"><span class="k">FRP service</span><span class="v">${dot(st.frp_up)}${esc(st.frp_svc || 'none')}</span></div>
+    <div class="trow"><span class="k">FRP port</span><span class="v">${esc(st.frp_port || st.bind_port || '?')}</span></div>
+    <div class="trow"><span class="k">Proxies</span><span class="v">${esc((st.proxies || []).join(', ') || '—')}</span></div>`;
 }
 async function refresh() {
   try {
@@ -508,6 +588,7 @@ document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
   b.disabled = false;
 });
 document.querySelectorAll('[data-log]').forEach(b => b.onclick = async () => {
+  document.querySelectorAll('[data-log]').forEach(x => x.setAttribute('aria-pressed', x === b));
   try { const r = await fetch(at('/api/logs?svc=' + b.dataset.log)); $('logs').textContent = (await r.json()).logs; }
   catch(e) { toast(e.message); }
 });

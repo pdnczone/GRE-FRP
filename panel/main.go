@@ -105,6 +105,9 @@ func main() {
 	base := "/" + cfg.BasePath
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+base+"/", serveIndex)
+	mux.HandleFunc("GET "+base+"/tokens.css", serveAsset("tokens.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET "+base+"/base.css", serveAsset("base.css", "text/css; charset=utf-8"))
+	mux.HandleFunc("GET "+base+"/favicon.png", serveAsset("favicon.png", "image/png"))
 	mux.HandleFunc("GET "+base+"/api/status", requireAuth(handleStatus))
 	mux.HandleFunc("POST "+base+"/api/login", handleLogin)
 	mux.HandleFunc("POST "+base+"/api/logout", handleLogout)
@@ -203,6 +206,19 @@ func handlePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- pages & api ----
+
+func serveAsset(name, ctype string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := panelFS.ReadFile(name)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", ctype)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(data)
+	}
+}
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
 	data, err := panelFS.ReadFile("index.html")
