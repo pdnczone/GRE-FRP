@@ -35,7 +35,7 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 // Empty string = could not determine (offline / rate-limited); the
 // frontend then shows "unknown" instead of failing.
 func latestReleaseTag() (string, error) {
-	resp, err := updateClient.Get("https://api.github.com/repos/pdnczone/GRE-FRP/releases/latest")
+	resp, err := updateClient.Get("https://api.github.com/repos/pdnczone/hashem/releases/latest")
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +71,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok", "detail": "already latest (" + panelVersion + ")"})
 		return
 	}
-	dlURL := "https://github.com/pdnczone/GRE-FRP/releases/download/" + latest + "/" + asset
+	dlURL := "https://github.com/pdnczone/hashem/releases/download/" + latest + "/" + asset
 	tmp, err := os.CreateTemp("", "gre-panel-update-*")
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

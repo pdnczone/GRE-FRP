@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# grepanel — control the GRE-FRP web panel after install.
+# grepanel — control the Hashem web panel after install.
 # Usage: grepanel <status|logs|restart|url|password|uninstall|optimize|restore|tune-status>
 set -euo pipefail
 

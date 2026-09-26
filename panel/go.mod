@@ -1,3 +1,3 @@
-module github.com/pdnczone/gre-frp/panel
+module github.com/pdnczone/hashem/panel
 
 go 1.23

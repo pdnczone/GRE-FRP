@@ -1,8 +1,8 @@
 # GRE + FRP Reverse Tunnel 🇮🇷 ↔ 🌍
 
-[![Latest Release](https://img.shields.io/github/release/pdnczone/GRE-FRP?display_name=tag)](https://github.com/pdnczone/GRE-FRP/releases/latest)
-[![Build Panel](https://github.com/pdnczone/GRE-FRP/actions/workflows/build-panel.yml/badge.svg)](https://github.com/pdnczone/GRE-FRP/actions/workflows/build-panel.yml)
-[![Platform](https://img.shields.io/badge/platform-linux%20amd64%20%7C%20arm64-blue)](https://github.com/pdnczone/GRE-FRP)
+[![Latest Release](https://img.shields.io/github/release/pdnczone/hashem?display_name=tag)](https://github.com/pdnczone/hashem/releases/latest)
+[![Build Panel](https://github.com/pdnczone/hashem/actions/workflows/build-panel.yml/badge.svg)](https://github.com/pdnczone/hashem/actions/workflows/build-panel.yml)
+[![Platform](https://img.shields.io/badge/platform-linux%20amd64%20%7C%20arm64-blue)](https://github.com/pdnczone/hashem)
 
 Layer-3 GRE tunnel + encrypted TLS FRP reverse relay. Iran's IP stays behind the tunnel; foreign-server ports become reachable through Iran's public IP.
 
@@ -36,14 +36,14 @@ Users ──► IRAN (public ports here) ══ GRE + FRP ══► FOREIGN (ser
 One-liner (both servers):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/pdnczone/hashem/main/install.sh)
 ```
 
 Manual:
 
 ```bash
-git clone https://github.com/pdnczone/GRE-FRP.git
-cd GRE-FRP
+git clone https://github.com/pdnczone/hashem.git
+cd Hashem
 sudo bash gre.sh
 ```
 

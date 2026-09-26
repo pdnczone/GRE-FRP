@@ -582,7 +582,7 @@ tune_apply() {
     # 7. Persist across reboots
     mkdir -p /etc/sysctl.d
     cat > /etc/sysctl.d/99-gre-tune.conf <<'EOF'
-# GRE-FRP tunnel optimization (applied by Optimize button / tune command)
+# Hashem tunnel optimization (applied by Optimize button / tune command)
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.core.netdev_max_backlog = 5000
@@ -639,7 +639,7 @@ tune_status() {
 }
 
 install_panel() {
-    echo -e "${CYAN}[*] Installing GRE-FRP web panel...${NC}"
+    echo -e "${CYAN}[*] Installing Hashem web panel...${NC}"
 
     ARCH=$(uname -m)
     case "$ARCH" in
@@ -651,7 +651,7 @@ install_panel() {
     TMP_PANEL="$(mktemp -d)"
     DL_OK=0
     # try latest release first (prebuilt, no Go needed)
-    LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/GRE-FRP/releases/latest" 2>/dev/null) || true
+    LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/hashem/releases/latest" 2>/dev/null) || true
     if [[ -n "$LATEST_JSON" ]]; then
         DL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*${PANEL_ASSET}\"" | head -1 | cut -d'"' -f4)
         if [[ -n "$DL_URL" ]] && curl -fsSL --max-time 90 -L "$DL_URL" -o "$TMP_PANEL/gre-panel" && [[ -s "$TMP_PANEL/gre-panel" ]]; then
@@ -680,7 +680,7 @@ install_panel() {
             apt-get update -qq
             apt-get install -y -qq golang-go
         fi
-        if ! curl -fsSL "https://github.com/pdnczone/GRE-FRP/archive/refs/heads/main.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
+        if ! curl -fsSL "https://github.com/pdnczone/hashem/archive/refs/heads/main.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
             echo -e "${RED}[!] Failed to download panel sources.${NC}"
             rm -rf "$TMP_PANEL"
             return 1
@@ -705,7 +705,7 @@ install_panel() {
 
     cat > /etc/systemd/system/gre-panel.service <<EOF
 [Unit]
-Description=GRE-FRP Web Panel
+Description=Hashem Web Panel
 After=network.target
 
 [Service]
@@ -794,11 +794,11 @@ save_panel_pass() {
 }
 
 update_all() {
-    echo -e "${CYAN}[*] Updating GRE-FRP (script + panel binary)...${NC}"
+    echo -e "${CYAN}[*] Updating Hashem (script + panel binary)...${NC}"
     TMP_U="$(mktemp -d)"
     trap 'rm -rf "$TMP_U"' RETURN
     # 1. fresh script from main
-    if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/gre.sh" -o "$TMP_U/gre.sh"; then
+    if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/hashem/main/gre.sh" -o "$TMP_U/gre.sh"; then
         echo -e "${RED}[!] Failed to download latest gre.sh — nothing changed.${NC}"
         return 1
     fi
