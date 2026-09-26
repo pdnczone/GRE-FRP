@@ -70,6 +70,8 @@ func loadOrInit() {
 		BasePath: randomBase(12),
 	}
 	_ = os.WriteFile(cfgPath(), mustJSON(cfg), 0600)
+	// plaintext copy so the server admin can view it later via script menu (user choice)
+	_ = os.WriteFile(filepath.Join(configDir, "panel.pass"), []byte(pass), 0600)
 	log.Printf("panel password: %s (user %s) — change it from Settings", pass, cfg.Username)
 }
 
@@ -207,6 +209,8 @@ func handlePassword(w http.ResponseWriter, r *http.Request) {
 	h := sha256.Sum256([]byte(body.Password))
 	cfg.PassHash = hex.EncodeToString(h[:])
 	_ = os.WriteFile(cfgPath(), mustJSON(cfg), 0600)
+	// keep plaintext copy in sync (user choice: viewable via script menu)
+	_ = os.WriteFile(filepath.Join(configDir, "panel.pass"), []byte(body.Password), 0600)
 	if _, err := rand.Read(nonce[:]); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

@@ -471,6 +471,9 @@ EOF
     sleep 2
 
     if systemctl is-active --quiet gre-panel; then
+        # capture the fresh password from the log so option 8 can show it later
+        NEWPASS=$(journalctl -u gre-panel -n 5 --no-pager 2>/dev/null | grep -o 'panel password: [0-9]*' | tail -1 | awk '{print $3}')
+        [[ -n "$NEWPASS" ]] && save_panel_pass "$NEWPASS"
         echo -e "${GREEN}[✔️] Panel installed and running.${NC}"
         show_panel_url
     else
@@ -480,12 +483,48 @@ EOF
 }
 
 show_panel_url() {
-    local port base
+    local port base user pass
     port=$(grep -o '"port": [0-9]*' /etc/gre-panel/panel.json 2>/dev/null | grep -o '[0-9]*')
     base=$(grep -o '"base_path": "[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
+    user=$(grep -o '"username": "[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
     port=${port:-7777}
-    echo -e "${GREEN}Panel URL: ${CYAN}http://<this-server-ip>:${port}/${base}${NC}"
-    echo -e "${YELLOW}Password is in the install log above (admin user).${NC}"
+    user=${user:-admin}
+    pass=$(cat /etc/gre-panel/panel.pass 2>/dev/null)
+    MYIP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    echo -e "${GREEN}Panel URL:  ${CYAN}http://${MYIP:-<this-server-ip>}:${port}/${base}${NC}"
+    echo -e "${GREEN}Username:   ${CYAN}${user}${NC}"
+    if [[ -n "$pass" ]]; then
+        echo -e "${GREEN}Password:   ${CYAN}${pass}${NC}"
+    else
+        echo -e "${YELLOW}Password:   (not saved — use: grep 'panel password' from install log, or reset via web Settings)${NC}"
+    fi
+}
+
+# save plaintext panel password next to config (user chose convenience over max security)
+save_panel_pass() {
+    local pass="$1"
+    [[ -n "$pass" ]] && echo -n "$pass" > /etc/gre-panel/panel.pass 2>/dev/null
+    chmod 600 /etc/gre-panel/panel.pass 2>/dev/null || true
+}
+
+update_all() {
+    echo -e "${CYAN}[*] Updating GRE-FRP (script + panel binary)...${NC}"
+    TMP_U="$(mktemp -d)"
+    # 1. fresh script from main
+    if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/gre.sh" -o "$TMP_U/gre.sh"; then
+        echo -e "${RED}[!] Failed to download latest gre.sh${NC}"
+        rm -rf "$TMP_U"
+        return 1
+    fi
+    bash -n "$TMP_U/gre.sh" || { echo -e "${RED}[!] Downloaded script failed syntax check${NC}"; rm -rf "$TMP_U"; return 1; }
+    # 2. reinstall panel binary from latest release (downloads prebuilt, restarts service)
+    echo -e "${CYAN}[*] Updating panel binary...${NC}"
+    install_panel || { echo -e "${RED}[!] Panel update failed${NC}"; rm -rf "$TMP_U"; return 1; }
+    # 3. replace running script only after everything succeeded
+    cp "$TMP_U/gre.sh" "$0" 2>/dev/null || cp "$TMP_U/gre.sh" ./gre.sh
+    chmod +x "$0" 2>/dev/null || true
+    rm -rf "$TMP_U"
+    echo -e "${GREEN}[✔️] Update complete — script + panel are latest. Re-run the script to use the new menu.${NC}"
 }
 
 main_menu() {
@@ -502,8 +541,8 @@ main_menu() {
     echo "4) View FRP Live Logs"
     echo "5) Restart Tunnel Services"
     echo "6) Uninstall Everything (GRE + FRP)"
-    echo "7) Install/Reinstall Web Panel (prebuilt binary, no Go needed)"
-    echo "8) Show Panel URL"
+    echo "7) Update All (latest script + latest panel binary)"
+    echo "8) Show Panel URL + Username + Password"
     echo "0) Exit"
     echo ""
     read -p "Select an option [0-8]: " OPTION
@@ -528,7 +567,7 @@ main_menu() {
             uninstall_all
             ;;
         7)
-            install_panel
+            update_all
             ;;
         8)
             show_panel_url
