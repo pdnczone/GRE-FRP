@@ -422,6 +422,7 @@
         <div class="tunnel-card">
           <div class="tc-header"><p class="tc-title">Tunnel status</p><span class="status-indicator" id="tunnelDot"><span class="dot"></span><span id="tunnelDotTxt">—</span></span></div>
           <div id="tunnel"></div>
+          <div id="peerCards" style="display:grid;gap:10px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
             <button class="hashem-btn hashem-btn-secondary" data-act="ping">Ping peer</button>
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-gre">Restart GRE</button>
@@ -433,6 +434,27 @@
           </div>
           <pre id="actOut" class="logs hidden" style="margin-top:4px"></pre>
           <div class="qs-hint" id="tuneHint">Optimize: BBR + 16MB buffers + backlog + forwarding + GRE MTU 1448 + MSS clamp. Backs up current settings first — Restore brings them back.</div>
+        </div>
+        <div class="tunnel-card" id="addPeerCard">
+          <div class="tc-header"><p class="tc-title">➕ Connect another foreign server</p><span class="qs-hint" id="peerCountHint"></span></div>
+          <div class="qs-body" style="display:grid;gap:10px">
+            <div class="fg"><label for="pName">Name (label for this tunnel)</label><input class="hashem-input" id="pName" placeholder="e.g. germany-1" maxlength="32"></div>
+            <div class="qs-row">
+              <div class="fg"><label for="pRemotePub">Foreign public IP</label><input class="hashem-input" id="pRemotePub" inputmode="decimal" placeholder="e.g. 203.0.113.10"></div>
+              <div class="fg"><label for="pLocalPub">Iran public IP (auto, editable)</label><input class="hashem-input" id="pLocalPub" inputmode="decimal"></div>
+              <div class="fg"><label for="pLocalGre">Iran GRE IP (unique)</label><input class="hashem-input" id="pLocalGre" inputmode="decimal" placeholder="e.g. 10.11.0.2"></div>
+              <div class="fg"><label for="pPeerGre">Foreign GRE IP</label><input class="hashem-input" id="pPeerGre" inputmode="decimal" placeholder="e.g. 10.11.0.1"></div>
+              <div class="fg"><label for="pFrpPort">Control port (unique per peer)</label><input class="hashem-input" id="pFrpPort" inputmode="numeric" placeholder="e.g. 7001"></div>
+              <div class="fg"><label for="pPorts">Reverse ports (comma-separated)</label><input class="hashem-input" id="pPorts" placeholder="443, 2083"></div>
+            </div>
+            <div class="qs-hint">Each peer gets its own token. Ports already used by another tunnel are rejected — pick a different one.</div>
+            <div id="peerWarn" class="warnbox hidden"></div>
+            <div id="peerToken" class="tokenbox hidden"></div>
+            <div class="qs-actions">
+              <button class="hashem-btn hashem-btn-primary" id="addPeerBtn">Add tunnel</button>
+            </div>
+            <pre id="peerOut" class="logs hidden"></pre>
+          </div>
         </div>
       </section>
       <section id="tab-setup" hidden>
@@ -485,12 +507,34 @@
       </section>
       <section id="tab-logs" hidden>
         <div class="tunnel-card">
-          <div class="tc-header"><p class="tc-title">Logs</p></div>
-          <div class="qs-seg" role="group" aria-label="Service">
+          <div class="tc-header"><p class="tc-title">Logs</p>
+            <label class="qs-hint" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="logFollow" checked style="accent-color:var(--ac)"> Live
+            </label>
+          </div>
+          <div class="qs-seg" role="group" aria-label="Service" id="logSvcSeg" style="flex-wrap:wrap">
             <button data-log="frps" aria-pressed="true">frps</button>
             <button data-log="frpc" aria-pressed="false">frpc</button>
+            <button data-log="gre-panel" aria-pressed="false">panel</button>
           </div>
-          <pre id="logs" class="logs">(pick a service)</pre>
+          <div class="qs-hint" id="logPeerHint" style="margin-top:8px">Peer tunnels appear here when added.</div>
+          <div class="qs-row" style="margin-top:8px">
+            <div class="fg"><label for="logSearch">Search (filters lines)</label><input class="hashem-input" id="logSearch" placeholder="e.g. error, login, 443"></div>
+            <div class="fg"><label for="logLevel">Level</label><select class="hashem-input" id="logLevel">
+              <option value="">All levels</option>
+              <option value="error">Errors</option>
+              <option value="warn">Warnings</option>
+              <option value="login">Logins / auth</option>
+            </select></div>
+            <div class="fg"><label for="logLines">Lines</label><select class="hashem-input" id="logLines">
+              <option value="50">Last 50</option>
+              <option value="100" selected>Last 100</option>
+              <option value="300">Last 300</option>
+              <option value="1000">Last 1000</option>
+            </select></div>
+          </div>
+          <div class="qs-hint" id="logMeta" style="margin-top:8px">—</div>
+          <pre id="logs" class="logs" style="margin-top:8px">(pick a service)</pre>
         </div>
       </section>
       <section id="tab-update" hidden>
@@ -545,6 +589,7 @@ function goTab(name) {
   ['dashboard','tunnel','setup','logs','update','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   if (name === 'update') loadVersion();
+  if (name === 'logs') { refreshLogPeers(); loadLogs(); armLogFollow(); }
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => goTab(b.dataset.tab));
 // theme (hashem-style: localStorage + data-t on html and body)
@@ -557,6 +602,64 @@ $('themeBtn').onclick = () => setTheme(document.body.dataset.t === 'dark' ? 'lig
 try { setTheme(localStorage.getItem('gre_theme') || document.body.dataset.t || 'dark'); } catch(e) {}
 
 function dot(ok) { return `<span class="dot ${ok ? 'up' : 'down'}"></span>`; }
+function peerAct(action, peerId) {
+  return (async () => {
+    try {
+      const r = await api('/api/action', {action, peer_id: peerId});
+      $('actOut').classList.remove('hidden');
+      $('actOut').textContent = r.output || 'ok';
+      refresh();
+    } catch(e) { toast(e.message); }
+  })();
+}
+async function removePeer(peerId, name) {
+  if (!confirm(`Remove tunnel '${name}'? Its GRE + frps go away; other tunnels keep running.`)) return;
+  try {
+    const r = await api('/api/action', {action: 'remove-tunnel', peer_id: peerId});
+    toast(`tunnel '${name}' removed`);
+    refresh();
+  } catch(e) { toast(e.message); }
+}
+async function showPeerToken(peerId, name) {
+  try {
+    const r = await api('/api/peers?id=' + peerId);
+    toast(`token for '${name}': ${r.token} (also in logs)`);
+    $('actOut').classList.remove('hidden');
+    $('actOut').textContent = `Token for '${name}': ${r.token}\nForeign side: frpc with this token + the peer's ports.`;
+  } catch(e) { toast(e.message); }
+}
+function renderPeers(peers) {
+  const box = $('peerCards');
+  if (!box) return;
+  if (!peers || !peers.length) { box.innerHTML = ''; return; }
+  box.innerHTML = peers.map(p => {
+    const up = !!(p.gre_up || p.frp_up);
+    const badge = (ok, label) => `<span class="badge ${ok ? 'ok' : 'err'}"><span class="dot"></span>${esc(label)}</span>`;
+    const traffic = (p.rx != null && p.tx != null)
+      ? `↓ ${fmtBytes(p.rx)} · ↑ ${fmtBytes(p.tx)}`
+      : 'traffic N/A';
+    return `<div class="tunnel-card" style="padding:14px">
+      <div class="tc-header">
+        <p class="tc-title">🔗 ${esc(p.name || ('peer-' + p.id))} <span class="qs-hint">#${p.id}</span></p>
+        <span class="status-indicator ${up ? 'active' : 'offline'}"><span class="dot"></span><span>${up ? 'up' : 'down'}</span></span>
+      </div>
+      <div class="trow"><span class="k">Foreign IP</span><span class="v mono">${esc(p.remote_pub || '?')}</span></div>
+      <div class="trow"><span class="k">GRE path</span><span class="v mono">${esc(p.local_pub || '?')} → ${esc(p.remote_pub || '?')}</span></div>
+      <div class="trow"><span class="k">GRE inner</span><span class="v mono">${esc(p.local_gre || '?')} ⇄ ${esc(p.peer_gre || '?')} ${badge(p.gre_up, p.gre_up ? p.gre_if : 'down')}</span></div>
+      <div class="trow"><span class="k">FRP</span><span class="v mono">${esc(p.frps_svc || '')} :${esc(String(p.frp_port || '?'))} ${badge(p.frp_up, p.frp_up ? 'up' : 'down')}</span></div>
+      <div class="trow"><span class="k">Ports</span><span class="v mono">${esc((p.ports || []).join(', ') || '—')}</span></div>
+      <div class="trow"><span class="k">Ping</span><span class="v">${badge(p.ping_ok, p.ping_ms || 'no answer')}</span></div>
+      <div class="trow"><span class="k">Traffic</span><span class="v mono">${esc(traffic)}</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="hashem-btn hashem-btn-secondary" onclick="peerAct('ping', ${p.id})">Ping</button>
+        <button class="hashem-btn hashem-btn-secondary" onclick="peerAct('restart-gre', ${p.id})">Restart GRE</button>
+        <button class="hashem-btn hashem-btn-secondary" onclick="peerAct('restart-frps', ${p.id})">Restart frps</button>
+        <button class="hashem-btn hashem-btn-secondary" onclick="showPeerToken(${p.id}, '${esc(p.name || ('peer-' + p.id))}')">Show token</button>
+        <button class="hashem-btn hashem-btn-danger" onclick="removePeer(${p.id}, '${esc(p.name || ('peer-' + p.id))}')">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 function renderTunnel(st) {
   $('roleLine').textContent = esc(st.role || 'unknown role');
   const up = !!(st.gre.exists || st.frp_up);
@@ -578,9 +681,68 @@ async function refresh() {
   try {
     const s = await api('/api/status');
     renderTunnel(s.local);
+    renderPeers(s.peers);
+    updatePeerHints(s);
   } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
   refreshDash();
 }
+// peer add-form: prefill Iran IP + suggest next control port / GRE pair
+async function updatePeerHints(s) {
+  try {
+    const d = await api('/api/setup');
+    if (!$('pLocalPub').value) $('pLocalPub').value = d.local_public || '';
+    const n = (s && s.peer_count) || 0;
+    const hint = $('peerCountHint');
+    if (hint) hint.textContent = n + ' / 5 tunnels';
+    if (!$('pFrpPort').value) $('pFrpPort').value = 7000 + n;
+    if (!$('pLocalGre').value) $('pLocalGre').value = '10.1' + (n + 1) + '.0.2';
+    if (!$('pPeerGre').value) $('pPeerGre').value = '10.1' + (n + 1) + '.0.1';
+  } catch(e) {}
+}
+$('addPeerBtn').onclick = async () => {
+  const b = $('addPeerBtn');
+  b.disabled = true;
+  $('peerToken').classList.add('hidden');
+  $('peerWarn').classList.add('hidden');
+  try {
+    const body = {
+      role: 'add-peer',
+      name: $('pName').value.trim(),
+      local_public: $('pLocalPub').value.trim(),
+      remote_public: $('pRemotePub').value.trim(),
+      local_gre: $('pLocalGre').value.trim(),
+      peer_gre: $('pPeerGre').value.trim(),
+      frp_port: parseInt($('pFrpPort').value, 10),
+      ports: $('pPorts').value,
+      autogen: true,
+    };
+    let r;
+    try {
+      r = await api('/api/setup', body);
+    } catch(e) {
+      // 409 = port already served by another tunnel — show it inline
+      if (/already served|already used|peer table full/i.test(e.message)) {
+        const w = $('peerWarn');
+        w.innerHTML = '⚠️ ' + esc(e.message);
+        w.classList.remove('hidden');
+        toast('pick a different port');
+        return;
+      }
+      throw e;
+    }
+    const out = $('peerOut');
+    out.classList.remove('hidden');
+    out.textContent = (r.steps || []).join('\n');
+    if (r.token) {
+      const t = $('peerToken');
+      t.innerHTML = '🔑 Token (enter on the Foreign side with ports <b>' + esc($('pPorts').value) + '</b>): <b>' + esc(r.token) + '</b>';
+      t.classList.remove('hidden');
+    }
+    toast('tunnel added');
+    refresh();
+  } catch(e) { toast(e.message); }
+  b.disabled = false;
+};
 // ---- dashboard ----
 const NA = 'N/A';
 const fmtBytes = n => {
@@ -714,17 +876,35 @@ async function refreshDash() {
     const d = await api('/api/dashboard?range=' + dashRange);
     if (!d || typeof d !== 'object') return;
     const on = !!d.online;
+    const nPeers = d.peer_count || 0;
+    const multi = nPeers > 0;
     set('kpiStatus', on ? 'Online' : 'Offline');
     const kpiStatus = $('kpiStatus'); if (kpiStatus) kpiStatus.style.color = on ? 'var(--ok)' : 'var(--er)';
-    set('kpiStatusSub', (d.role || 'unknown role') + ' · ' + (d.checked ? 'checked ' + String(d.checked).slice(11, 19) + ' UTC' : ''));
+    set('kpiStatusSub', (multi ? nPeers + ' tunnel' + (nPeers > 1 ? 's' : '') + ' · ' : '') + (d.role || 'unknown role') + ' · ' + (d.checked ? 'checked ' + String(d.checked).slice(11, 19) + ' UTC' : ''));
     const g = d.gre || {}, f = d.frp || {};
-    const greUp = !!g.exists, frpUp = !!f.up;
+    const peers = d.peers || [];
     const kpiLinks = $('kpiLinks');
-    if (kpiLinks) kpiLinks.innerHTML = '<span class="badge ' + (greUp ? 'ok' : 'err') + '"><span class="dot"></span>GRE</span> <span class="badge ' + (frpUp ? 'ok' : 'err') + '"><span class="dot"></span>FRP</span>';
-    set('kpiLinksSub', (f.svc || 'no frp') + ((f.proxies || []).length ? ' · ' + f.proxies.length + ' proxies' : '') + ' · ' + (g.inner || 'no gre ip'));
-    const ms = d.ping_ok && d.ping ? parseFloat(d.ping) : null;
-    set('kpiPing', d.ping_ok && d.ping ? d.ping : NA);
-    setHTML('kpiPingSub', ms == null ? 'no answer' : ms < 80 ? '<span class="badge ok"><span class="dot"></span>Optimal</span>' : ms < 200 ? '<span class="badge ok"><span class="dot"></span>Good</span>' : '<span class="badge warn"><span class="dot"></span>High</span>');
+    if (multi) {
+      // multi-peer: count legs up
+      const greUp = peers.filter(p => p.gre_up).length, frpUp = peers.filter(p => p.frp_up).length;
+      if (kpiLinks) kpiLinks.innerHTML = '<span class="badge ' + (greUp ? 'ok' : 'err') + '"><span class="dot"></span>GRE ' + greUp + '/' + nPeers + '</span> <span class="badge ' + (frpUp ? 'ok' : 'err') + '"><span class="dot"></span>FRP ' + frpUp + '/' + nPeers + '</span>';
+    } else {
+      const greUp = !!g.exists, frpUp = !!f.up;
+      if (kpiLinks) kpiLinks.innerHTML = '<span class="badge ' + (greUp ? 'ok' : 'err') + '"><span class="dot"></span>GRE</span> <span class="badge ' + (frpUp ? 'ok' : 'err') + '"><span class="dot"></span>FRP</span>';
+    }
+    if (multi) {
+      // multi-peer: best ping across legs, sub lists per-peer names
+      let best = null;
+      peers.forEach(p => { if (p.ping_ok && p.ping_ms) { const v = parseFloat(p.ping_ms); if (best == null || v < best) best = v; } });
+      set('kpiLinksSub', peers.map(p => (p.gre_up || p.frp_up ? '● ' : '○ ') + (p.name || ('peer-' + p.id))).join(' · '));
+      set('kpiPing', best != null ? Math.round(best) + 'ms' : NA);
+      setHTML('kpiPingSub', best == null ? 'no answer' : best < 80 ? '<span class="badge ok"><span class="dot"></span>Optimal</span>' : best < 200 ? '<span class="badge ok"><span class="dot"></span>Good</span>' : '<span class="badge warn"><span class="dot"></span>High</span>');
+    } else {
+      set('kpiLinksSub', (f.svc || 'no frp') + ((f.proxies || []).length ? ' · ' + f.proxies.length + ' proxies' : '') + ' · ' + (g.inner || 'no gre ip'));
+      const ms = d.ping_ok && d.ping ? parseFloat(d.ping) : null;
+      set('kpiPing', d.ping_ok && d.ping ? d.ping : NA);
+      setHTML('kpiPingSub', ms == null ? 'no answer' : ms < 80 ? '<span class="badge ok"><span class="dot"></span>Optimal</span>' : ms < 200 ? '<span class="badge ok"><span class="dot"></span>Good</span>' : '<span class="badge warn"><span class="dot"></span>High</span>');
+    }
     const t = d.traffic || {};
     set('kpiTraffic', fmtBytes(t.total));
     set('kpiTrafficSub', '↑ ' + fmtBytes(t.up) + '  ·  ↓ ' + fmtBytes(t.down));
@@ -1013,11 +1193,63 @@ document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
   } catch(e) { toast(e.message); }
   b.disabled = false;
 });
-document.querySelectorAll('[data-log]').forEach(b => b.onclick = async () => {
-  document.querySelectorAll('[data-log]').forEach(x => x.setAttribute('aria-pressed', x === b));
-  try { const r = await fetch(at('/api/logs?svc=' + b.dataset.log)); $('logs').textContent = (await r.json()).logs; }
-  catch(e) { toast(e.message); }
-});
+let logSvc = 'frps', logTimer = null, logRaw = '';
+function logLevelMatch(line, lvl) {
+  if (!lvl) return true;
+  const l = line.toLowerCase();
+  if (lvl === 'error') return /error|fail|refus|denied|panic|fatal/.test(l);
+  if (lvl === 'warn') return /warn|error|fail|refus|denied|retry|timeout/.test(l);
+  if (lvl === 'login') return /login|auth|sess|password|unauthor/.test(l);
+  return true;
+}
+function paintLogs() {
+  const q = ($('logSearch').value || '').toLowerCase();
+  const lvl = $('logLevel').value;
+  const lines = logRaw.split('\n').filter(ln => (!q || ln.toLowerCase().includes(q)) && logLevelMatch(ln, lvl));
+  $('logs').textContent = lines.length ? lines.join('\n') : '(no lines match the filter)';
+  $('logMeta').textContent = logRaw ? `${logRaw.split('\n').length} lines from ${logSvc} · showing ${lines.length}` : '—';
+}
+async function loadLogs() {
+  try {
+    const r = await fetch(at('/api/logs?svc=' + encodeURIComponent(logSvc) + '&n=' + $('logLines').value));
+    logRaw = (await r.json()).logs || '';
+    paintLogs();
+  } catch(e) { toast(e.message); }
+}
+function setLogSvc(svc) {
+  logSvc = svc;
+  document.querySelectorAll('#logSvcSeg [data-log]').forEach(x => x.setAttribute('aria-pressed', x === svc));
+  loadLogs();
+}
+function armLogFollow() {
+  if (logTimer) clearInterval(logTimer);
+  logTimer = setInterval(() => {
+    if (!$('app').classList.contains('hidden') && !$('tab-logs').hidden && $('logFollow').checked) loadLogs();
+  }, 5000);
+}
+document.querySelectorAll('#logSvcSeg [data-log]').forEach(b => b.onclick = () => setLogSvc(b.dataset.log));
+$('logSearch').oninput = paintLogs;
+$('logLevel').onchange = paintLogs;
+$('logLines').onchange = loadLogs;
+// peer tunnel log buttons appear once peers exist
+async function refreshLogPeers() {
+  try {
+    const s = await api('/api/status');
+    const seg = $('logSvcSeg');
+    seg.querySelectorAll('[data-peerlog]').forEach(b => b.remove());
+    (s.peers || []).forEach(p => {
+      const b = document.createElement('button');
+      b.dataset.log = p.frps_svc; b.setAttribute('data-peerlog', p.id);
+      b.setAttribute('aria-pressed', logSvc === p.frps_svc);
+      b.textContent = p.name || ('peer-' + p.id);
+      b.onclick = () => setLogSvc(p.frps_svc);
+      seg.appendChild(b);
+    });
+    const h = $('logPeerHint');
+    if (h) h.textContent = (s.peers || []).length ? (s.peers.length + ' peer tunnel(s) — pick one to see its frps log.') : '';
+    if (!h.textContent) h.classList.add('hidden'); else h.classList.remove('hidden');
+  } catch(e) {}
+}
 $('savePass').onclick = async () => {
   try { await api('/api/password', {password: $('newPass').value}); $('newPass').value=''; toast('password changed'); }
   catch(e) { toast(e.message); }
@@ -1072,6 +1304,7 @@ $('updateBtn').onclick = async () => {
   catch(e) { showLogin(); }
 })();
 setInterval(() => { if (!$('app').classList.contains('hidden')) refresh(); }, 15000);
+armLogFollow();
 setInterval(() => { if (!$('app').classList.contains('hidden') && !$('tab-dashboard').hidden) refreshDash(); }, 5000);
 </script>
 </body>

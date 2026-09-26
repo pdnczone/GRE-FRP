@@ -5,7 +5,6 @@ package main
 // and the frontend renders it as N/A (never crashes).
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,8 +38,22 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	st := localStatus()
 	traffic := greTraffic()
 	recordTrafficSample(traffic)
+	peers := livePeers()
+	// multi-peer rollup: tunnel counts as online if ANY leg is up
+	anyUp := st.Gre.Exists || st.FrpUp
+	if len(peers) > 0 {
+		anyUp = false
+		for _, p := range peers {
+			if p.GreUp || p.FrpUp {
+				anyUp = true
+				break
+			}
+		}
+	}
 	d := map[string]any{
-		"online":     st.Gre.Exists || st.FrpUp,
+		"online":     anyUp,
+		"peer_count": len(peers),
+		"peers":      peers,
 		"ping_ok":    st.PingOK,
 		"ping":      nilIfEmpty(st.PingMs),
 		"role":      nilIfEmpty(st.Role),
@@ -88,32 +101,32 @@ func peerOr(st tunnelStatus) string {
 	return st.GrePeer
 }
 
-// ---- traffic: rx/tx bytes of gre-tunnel from /proc/net/dev ----
-
+// ---- traffic: rx/tx bytes summed across GRE interfaces ----
+// Multi-peer: sum counters of every registered gre interface (gre-tunnel,
+// gre-t2, ...). Legacy single installs read gre-tunnel as before.
 func greTraffic() map[string]any {
-	f, err := os.Open("/proc/net/dev")
-	if err != nil {
+	if peers := loadPeers(); len(peers) > 0 {
+		var up, down uint64
+		have := false
+		for _, q := range peers {
+			rx, tx := ifaceTraffic(q.GreIf)
+			if rx == nil || tx == nil {
+				continue
+			}
+			have = true
+			down += *rx
+			up += *tx
+		}
+		if !have {
+			return map[string]any{"up": nil, "down": nil, "total": nil}
+		}
+		return map[string]any{"up": up, "down": down, "total": up + down}
+	}
+	rx, tx := ifaceTraffic("gre-tunnel")
+	if rx == nil || tx == nil {
 		return map[string]any{"up": nil, "down": nil, "total": nil}
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if !strings.HasPrefix(line, "gre-tunnel:") {
-			continue
-		}
-		fields := strings.Fields(strings.TrimPrefix(line, "gre-tunnel:"))
-		if len(fields) < 9 {
-			break
-		}
-		rx, err1 := strconv.ParseUint(fields[0], 10, 64)
-		tx, err2 := strconv.ParseUint(fields[8], 10, 64)
-		if err1 != nil || err2 != nil {
-			break
-		}
-		return map[string]any{"up": tx, "down": rx, "total": tx + rx}
-	}
-	return map[string]any{"up": nil, "down": nil, "total": nil}
+	return map[string]any{"up": *tx, "down": *rx, "total": *tx + *rx}
 }
 
 // ---- uptime: system + panel + frp service ----

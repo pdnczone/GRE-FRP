@@ -125,6 +125,8 @@ func main() {
 	mux.HandleFunc("GET "+base+"/api/version", requireAuth(handleVersion))
 	mux.HandleFunc("POST "+base+"/api/update", requireAuth(handleUpdate))
 	mux.HandleFunc("POST "+base+"/api/setup", requireAuth(handleSetupPost))
+	mux.HandleFunc("GET "+base+"/api/peers", requireAuth(handlePeersGet))
+	mux.HandleFunc("POST "+base+"/api/peers", requireAuth(handlePeersPost))
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("gre-panel listening on %s under /%s", addr, cfg.BasePath)

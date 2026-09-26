@@ -10,11 +10,19 @@ cmd="${1:-status}"
 case "$cmd" in
   status)
     systemctl is-active gre-panel 2>/dev/null || echo "panel service: not running"
-    echo "--- tunnel ---"
-    systemctl is-active gre-tunnel.service 2>/dev/null || echo "gre: not running"
-    systemctl is-active frps 2>/dev/null >/dev/null && echo "frps: active" || true
-    systemctl is-active frpc 2>/dev/null >/dev/null && echo "frpc: active" || true
-    ip tunnel show 2>/dev/null | grep -E "gre-tunnel" || echo "no gre-tunnel interface"
+    echo "--- tunnels ---"
+    if [[ -f /etc/gre-panel/peers.json ]] && command -v python3 >/dev/null 2>&1; then
+      PEERS_F=/etc/gre-panel/peers.json python3 -c '
+import json,os,subprocess
+for p in sorted(json.load(open(os.environ["PEERS_F"])).get("peers",[]), key=lambda x: x["id"]):
+    frp = subprocess.run(["systemctl","is-active",p.get("frps_svc","")],capture_output=True,text=True).stdout.strip()
+    print(f"#{p["id"]} {p["name"]} ({p.get("remote_pub","?")}): {p.get("gre_if","")} + {p.get("frps_svc","")} -> {frp}")'
+    else
+      systemctl is-active gre-tunnel.service 2>/dev/null || echo "gre: not running"
+      systemctl is-active frps 2>/dev/null >/dev/null && echo "frps: active" || true
+      systemctl is-active frpc 2>/dev/null >/dev/null && echo "frpc: active" || true
+      ip tunnel show 2>/dev/null | grep -E "gre-tunnel" || echo "no gre-tunnel interface"
+    fi
     ;;
   logs)
     journalctl -u gre-panel -n 50 --no-pager
@@ -47,7 +55,7 @@ case "$cmd" in
     systemctl daemon-reload
     echo "gre-panel removed (config kept in /etc/gre-panel)"
     ;;
-  optimize|restore|tune-status)
+  optimize|restore|tune-status|peer-list)
     # delegate to the installed gre.sh (single source of truth for tuning)
     for p in /usr/local/bin/gre.sh /root/gre.sh ./gre.sh; do
       if [[ -f "$p" ]]; then SCRIPT="$p"; break; fi
@@ -56,7 +64,7 @@ case "$cmd" in
     exec bash "$SCRIPT" "$cmd"
     ;;
   *)
-    echo "Usage: grepanel <status|logs|restart|url|password|uninstall|optimize|restore|tune-status>"
+    echo "Usage: grepanel <status|logs|restart|url|password|uninstall|optimize|restore|tune-status|peer-list>"
     exit 1
     ;;
 esac

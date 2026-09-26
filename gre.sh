@@ -168,17 +168,25 @@ install_frp_binaries() {
 }
 
 setup_gre_systemd() {
-    local LOCAL_IP=$1
-    local REMOTE_IP=$2
-    local GRE_INTERNAL_IP=$3
+    setup_gre_iface "$TUNNEL_NAME" "$1" "$2" "$3"
+}
 
-    echo -e "${CYAN}[*] Configuring persistent GRE tunnel service (${TUNNEL_NAME})...${NC}"
+# Generalized GRE interface setup: $1=ifname $2=local_pub $3=remote_pub $4=inner_ip.
+# setup_gre_systemd() above is the legacy single-tunnel wrapper; peers call this
+# directly with gre-tN names so every tunnel is the same GRE, just N of them.
+setup_gre_iface() {
+    local IFNAME=$1
+    local LOCAL_IP=$2
+    local REMOTE_IP=$3
+    local GRE_INTERNAL_IP=$4
+
+    echo -e "${CYAN}[*] Configuring persistent GRE tunnel service (${IFNAME})...${NC}"
 
     # Tear down existing if present
-    ip tunnel del "$TUNNEL_NAME" >/dev/null 2>&1 || true
+    ip tunnel del "$IFNAME" >/dev/null 2>&1 || true
 
     # Create systemd service for GRE
-    cat <<EOF > /etc/systemd/system/${TUNNEL_NAME}.service
+    cat <<EOF > /etc/systemd/system/${IFNAME}.service
 [Unit]
 Description=GRE Tunnel Interface
 After=network.target
@@ -186,17 +194,17 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStartPre=-/sbin/ip tunnel del ${TUNNEL_NAME}
-ExecStart=/bin/sh -c "/sbin/ip tunnel add ${TUNNEL_NAME} mode gre local ${LOCAL_IP} remote ${REMOTE_IP} ttl 255 && /sbin/ip link set dev ${TUNNEL_NAME} up mtu 1448 && /sbin/ip addr add ${GRE_INTERNAL_IP}/30 dev ${TUNNEL_NAME}"
-ExecStop=-/sbin/ip tunnel del ${TUNNEL_NAME}
+ExecStartPre=-/sbin/ip tunnel del ${IFNAME}
+ExecStart=/bin/sh -c "/sbin/ip tunnel add ${IFNAME} mode gre local ${LOCAL_IP} remote ${REMOTE_IP} ttl 255 && /sbin/ip link set dev ${IFNAME} up mtu 1448 && /sbin/ip addr add ${GRE_INTERNAL_IP}/30 dev ${IFNAME}"
+ExecStop=-/sbin/ip tunnel del ${IFNAME}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable "${TUNNEL_NAME}.service" >/dev/null 2>&1
-    systemctl restart "${TUNNEL_NAME}.service"
+    systemctl enable "${IFNAME}.service" >/dev/null 2>&1
+    systemctl restart "${IFNAME}.service"
 
     # Enable packet forwarding & MSS clamping to avoid fragmentation
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
@@ -333,6 +341,239 @@ EOF
     fi
 }
 
+# ---- Multi-peer tunnels: up to MAX_PEERS foreign servers on one Iran ----
+# Peer 1 reuses the legacy names (gre-tunnel, frps.toml, frps.service) so
+# existing installs keep working. Peers 2..5 get gre-tN + frps-N.toml +
+# frps-N.service, each with its own token and control port (one frps
+# understands only one token). Registry: /etc/gre-panel/peers.json.
+PEERS_FILE="/etc/gre-panel/peers.json"
+MAX_PEERS=5
+
+peer_init() {
+    mkdir -p "$(dirname "$PEERS_FILE")" "$CONFIG_DIR"
+    [[ -f "$PEERS_FILE" ]] || echo '{"peers":[]}' > "$PEERS_FILE"
+}
+
+peer_require_py() {
+    command -v python3 >/dev/null 2>&1 || { echo -e "${RED}[!] python3 is required for peer management.${NC}"; return 1; }
+}
+
+# print registry as-is (JSON)
+peer_list() { peer_init; cat "$PEERS_FILE"; }
+
+# smallest free peer id (1..MAX_PEERS), or 0 when full
+peer_next_id() {
+    peer_require_py || return 1
+    PEERS_F="$PEERS_FILE" MAX_PEERS="$MAX_PEERS" python3 -c \
+'import json,os; d=json.load(open(os.environ["PEERS_F"])); used={p["id"] for p in d.get("peers",[])}; ids=[i for i in range(1,int(os.environ["MAX_PEERS"])+1) if i not in used]; print(ids[0] if ids else 0)'
+}
+
+# space-separated "port:peername" of all claimed reverse ports
+peer_ports_used() {
+    peer_require_py || return 1
+    PEERS_F="$PEERS_FILE" python3 -c \
+'import json,os; d=json.load(open(os.environ["PEERS_F"])); print(" ".join(f"{p}:{r["name"]}" for r in d.get("peers",[]) for p in r.get("ports",[])))'
+}
+
+# $1=id -> compact JSON record or empty
+peer_get() {
+    PEERS_F="$PEERS_FILE" PEER_ID="$1" python3 -c \
+'import json,os; d=json.load(open(os.environ["PEERS_F"])); m=[p for p in d.get("peers",[]) if p["id"]==int(os.environ["PEER_ID"])]; print(json.dumps(m[0]) if m else "")'
+}
+
+peer_token() {
+    peer_init; peer_require_py || return 1
+    local ID=$1 rec
+    rec=$(peer_get "$ID")
+    [[ -n "$rec" ]] || { echo -e "${RED}[!] No peer with id $ID.${NC}"; return 1; }
+    echo "$rec" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
+}
+
+# write one frps instance: $1=suffix("" for legacy, "-N" for peers) $2=bind_port $3=token
+peer_write_frps() {
+    local SUF=$1 BIND_PORT=$2 TOKEN=$3
+    cat <<EOF > "${CONFIG_DIR}/frps${SUF}.toml"
+bindAddr = "0.0.0.0"
+bindPort = ${BIND_PORT}
+auth.method = "token"
+auth.token = "${TOKEN}"
+transport.tls.force = false
+transport.maxPoolCount = 50
+EOF
+    local SVC="frps${SUF}"
+    cat <<EOF > /etc/systemd/system/${SVC}.service
+[Unit]
+Description=FRP Server Service${SUF:+ (peer${SUF#-})}
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5s
+ExecStart=${INSTALL_DIR}/frps -c ${CONFIG_DIR}/frps${SUF}.toml
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable "$SVC" >/dev/null 2>&1
+    systemctl restart "$SVC"
+    if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+        ufw allow "${BIND_PORT}/tcp" >/dev/null 2>&1
+    fi
+}
+
+# add a peer tunnel on the Iran side.
+# Flags: --name --local-pub --remote-pub --frp-port --token --local-gre --peer-gre --ports "443, 2083" [--force]
+cli_add_peer() {
+    local NAME="" LOCAL_PUB="" REMOTE_PUB="" FRP_PORT="7000" TOKEN="" LOCAL_GRE="" PEER_GRE="" PORTS="" FORCE=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) NAME="$2"; shift 2 ;;
+            --local-pub) LOCAL_PUB="$2"; shift 2 ;;
+            --remote-pub) REMOTE_PUB="$2"; shift 2 ;;
+            --frp-port) FRP_PORT="$2"; shift 2 ;;
+            --token) TOKEN="$2"; shift 2 ;;
+            --local-gre) LOCAL_GRE="$2"; shift 2 ;;
+            --peer-gre) PEER_GRE="$2"; shift 2 ;;
+            --ports) PORTS="$2"; shift 2 ;;
+            --force) FORCE=1; shift ;;
+            -h|--help) echo 'Usage: gre.sh add-peer --local-pub IP --remote-pub IP --frp-port N --token T --local-gre IP --peer-gre IP --ports "443, 2083" [--name LABEL] [--force]'; return 0 ;;
+            *) echo -e "${RED}[!] Unknown flag: $1${NC}"; return 1 ;;
+        esac
+    done
+    validate_setup_common "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$LOCAL_GRE" || return 1
+    is_valid_ip "$PEER_GRE" || { echo -e "${RED}[!] Invalid peer GRE IP: '$PEER_GRE'${NC}"; return 1; }
+    [[ "$LOCAL_GRE" != "$PEER_GRE" ]] || { echo -e "${RED}[!] Local and peer GRE IPs must differ.${NC}"; return 1; }
+    [[ -n "$TOKEN" ]] || { echo -e "${RED}[!] --token is required (generate one per peer).${NC}"; return 1; }
+    local CLEANED="" p
+    for p in $(echo "$PORTS" | tr ',' ' '); do
+        is_valid_port "$p" && CLEANED="$CLEANED $((10#$p))"
+    done
+    CLEANED=$(echo "$CLEANED" | xargs)
+    [[ -n "$CLEANED" ]] || { echo -e "${RED}[!] --ports needs at least one valid port.${NC}"; return 1; }
+    peer_init; peer_require_py || return 1
+    local ID
+    ID=$(peer_next_id)
+    [[ "$ID" -ge 1 ]] || { echo -e "${RED}[!] Peer table full (max ${MAX_PEERS} foreign servers). Remove one first.${NC}"; return 1; }
+    # port conflict: a remotePort can be served by only one frpc
+    local USED entry CONFLICT=""
+    USED=$(peer_ports_used)
+    for p in $CLEANED; do
+        for entry in $USED; do
+            if [[ "${entry%%:*}" == "$p" ]]; then CONFLICT="$CONFLICT $p (used by peer '${entry#*:}')"; fi
+        done
+    done
+    if [[ -n "$CONFLICT" ]]; then
+        echo -e "${RED}[!] Port conflict — already claimed by another tunnel:${CONFLICT}${NC}"
+        echo -e "${YELLOW}    Pick a different port for this peer (e.g. 8443 instead of 443).${NC}"
+        return 1
+    fi
+    # control port must be free on this machine
+    if ss -tln 2>/dev/null | grep -q ":${FRP_PORT} "; then
+        echo -e "${RED}[!] Control port ${FRP_PORT} is already in use on this server — use another one.${NC}"
+        return 1
+    fi
+    # GRE inner IPs must be unique across peers
+    if grep -q "\"local_gre\": *\"${LOCAL_GRE}\"" "$PEERS_FILE" || grep -q "\"peer_gre\": *\"${LOCAL_GRE}\"" "$PEERS_FILE"; then
+        echo -e "${RED}[!] GRE IP ${LOCAL_GRE} is already used by another peer.${NC}"; return 1
+    fi
+    [[ -z "$NAME" ]] && NAME="peer-${ID}"
+    install_frp_binaries
+    if [[ "$ID" -eq 1 ]] && ! tunnel_present; then
+        # first tunnel keeps legacy names (gre-tunnel, frps) — old setups untouched
+        setup_gre_systemd "$LOCAL_PUB" "$REMOTE_PUB" "$LOCAL_GRE"
+        peer_write_frps "" "$FRP_PORT" "$TOKEN"
+        GRE_IF="$TUNNEL_NAME"; FRPS_SVC="frps"; LEGACY=true
+    else
+        GRE_IF="gre-t${ID}"; FRPS_SVC="frps-${ID}"; LEGACY=false
+        setup_gre_iface "$GRE_IF" "$LOCAL_PUB" "$REMOTE_PUB" "$LOCAL_GRE"
+        peer_write_frps "-${ID}" "$FRP_PORT" "$TOKEN"
+        # point the new unit at the right interface
+        sed -i "s/After=network.target/After=network.target ${GRE_IF}.service/" /etc/systemd/system/${FRPS_SVC}.service
+        systemctl daemon-reload; systemctl restart "$FRPS_SVC"
+    fi
+    # registry record (ports as JSON array)
+    local PORTS_JSON
+    PORTS_JSON=$(echo "$CLEANED" | python3 -c 'import json,sys; print(json.dumps([int(x) for x in sys.stdin.read().split()]))')
+    PEERS_F="$PEERS_FILE" python3 - "$ID" "$NAME" "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$TOKEN" "$LOCAL_GRE" "$PEER_GRE" "$PORTS_JSON" "$GRE_IF" "$FRPS_SVC" "$LEGACY" <<'PYEOF'
+import json, os, sys
+f = os.environ["PEERS_F"]
+iid, name, lip, rip, fport, tok, lgre, pgre, pjson, gif, svc, leg = sys.argv[1:]
+d = json.load(open(f))
+d.setdefault("peers", []).append({"id": int(iid), "name": name, "local_pub": lip,
+  "remote_pub": rip, "frp_port": int(fport), "token": tok, "local_gre": lgre,
+  "peer_gre": pgre, "ports": json.loads(pjson), "gre_if": gif, "frps_svc": svc,
+  "legacy": leg == "true"})
+json.dump(d, open(f, "w"), indent=2)
+PYEOF
+    echo -e "${GREEN}[✔️] Peer '${NAME}' (id ${ID}) added: GRE ${LOCAL_PUB} <-> ${REMOTE_PUB} (${LOCAL_GRE} peer ${PEER_GRE} on ${GRE_IF}), ${FRPS_SVC} :${FRP_PORT}${NC}"
+    echo -e "${YELLOW}Token for '${NAME}': ${TOKEN} (enter it on the FOREIGN side with ports: ${CLEANED})${NC}"
+    echo -e "${CYAN}Foreign side: frpc server ${LOCAL_GRE}:${FRP_PORT}${NC}"
+}
+
+# remove one peer ($1=id). Legacy peer 1 also drops the old single tunnel.
+cli_remove_peer() {
+    local ID="" FORCE=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in --id) ID="$2"; shift 2 ;; --force) FORCE=1; shift ;;
+            -h|--help) echo 'Usage: gre.sh remove-peer --id N [--force]'; return 0 ;;
+            *) echo -e "${RED}[!] Unknown flag: $1${NC}"; return 1 ;; esac
+    done
+    [[ "$ID" =~ ^[0-9]+$ ]] || { echo -e "${RED}[!] --id N is required.${NC}"; return 1; }
+    peer_init; peer_require_py || return 1
+    local rec
+    rec=$(peer_get "$ID")
+    [[ -n "$rec" ]] || { echo -e "${RED}[!] No peer with id $ID.${NC}"; return 1; }
+    local NAME GIF SVC LEG
+    NAME=$(echo "$rec" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')
+    GIF=$(echo "$rec" | python3 -c 'import json,sys; print(json.load(sys.stdin)["gre_if"])')
+    SVC=$(echo "$rec" | python3 -c 'import json,sys; print(json.load(sys.stdin)["frps_svc"])')
+    LEG=$(echo "$rec" | python3 -c 'import json,sys; print("1" if json.load(sys.stdin).get("legacy") else "0")')
+    if [[ "$FORCE" -ne 1 ]]; then
+        read -p "Remove peer '${NAME}' (id ${ID})? GRE + its frps go away. (y/N): " CONFIRM
+        [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo -e "${YELLOW}[*] Aborted.${NC}"; return 0; }
+    fi
+    if [[ "$LEG" == "1" ]]; then
+        remove_tunnel_force
+    else
+        systemctl stop "$SVC" "${GIF}.service" >/dev/null 2>&1
+        systemctl disable "$SVC" "${GIF}.service" >/dev/null 2>&1
+        rm -f "/etc/systemd/system/${SVC}.service" "/etc/systemd/system/${GIF}.service" "/etc/frp/frps-${ID}.toml"
+        systemctl daemon-reload; systemctl reset-failed >/dev/null 2>&1 || true
+        ip tunnel del "$GIF" >/dev/null 2>&1 || true
+    fi
+    PEERS_F="$PEERS_FILE" PEER_ID="$ID" python3 -c \
+'import json,os; f=os.environ["PEERS_F"]; d=json.load(open(f)); d["peers"]=[p for p in d.get("peers",[]) if p["id"]!=int(os.environ["PEER_ID"])]; json.dump(d,open(f,"w"),indent=2)'
+    echo -e "${GREEN}[✔️] Peer '${NAME}' (id ${ID}) removed.${NC}"
+}
+
+# readable peer table for the menu
+peer_list_pretty() {
+    peer_init; peer_require_py || return 1
+    PEERS_F="$PEERS_FILE" python3 <<'PYEOF'
+import json, os, subprocess
+try:
+    peers = json.load(open(os.environ["PEERS_F"])).get("peers", [])
+except Exception as e:
+    print(f"[!] cannot read peers registry: {e}"); raise SystemExit(1)
+if not peers:
+    print("[*] No peer tunnels yet. Use 'Add peer tunnel' to connect a foreign server.")
+    raise SystemExit(0)
+tun = subprocess.run(["ip", "tunnel", "show"], capture_output=True, text=True).stdout
+for p in sorted(peers, key=lambda x: x["id"]):
+    gre = "up" if p.get("gre_if", "") in tun else "down"
+    try:
+        frp = subprocess.run(["systemctl", "is-active", p.get("frps_svc", "")],
+                             capture_output=True, text=True).stdout.strip()
+    except Exception:
+        frp = "?"
+    print(f"#{p['id']} {p['name']}: {p['remote_pub']} (GRE {p['local_gre']} peer {p['peer_gre']}, {p['gre_if']} {gre}) "
+          f"| {p['frps_svc']} :{p['frp_port']} {frp} | ports: {','.join(map(str, p.get('ports', [])))}")
+PYEOF
+}
+
 setup_iran_server() {
     echo -e "\n${YELLOW}====================================================${NC}"
     echo -e "${YELLOW}       STEP 1: CONFIGURING IRAN SERVER (GRE + FRPS)  ${NC}"
@@ -367,6 +608,44 @@ setup_iran_server() {
 
     # panel is already running here (menu path) — install it fresh
     install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
+}
+
+# interactive wrapper for cli_add_peer: prompts for one more foreign server.
+menu_add_peer() {
+    echo -e "\n${YELLOW}=== Add Peer Tunnel (connect ANOTHER foreign server to this Iran) ===${NC}"
+    peer_init
+    USED=$(peer_ports_used 2>/dev/null)
+    [[ -n "$USED" ]] && echo -e "${CYAN}Already claimed reverse ports: ${USED}${NC}"
+    local MYIP
+    MYIP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    local NAME IP_FOREIGN PORT CPORT TOKEN LGRE PGRE PPORTS
+    read -p "Peer name (e.g. germany-1) [Enter for auto]: " NAME
+    prompt_ip LOCAL_IRAN "Enter IRAN Server Public IP" "$MYIP"
+    prompt_ip IP_FOREIGN "Enter FOREIGN Server Public IP" ""
+    # suggest next free control port + GRE pair
+    local NEXT_ID SU_FP SU_LG SU_PG
+    NEXT_ID=$(peer_next_id 2>/dev/null || echo 2)
+    SU_FP=$((7000 + NEXT_ID - 1)); is_valid_port "$SU_FP" || SU_FP=7000
+    SU_LG="10.1${NEXT_ID}.0.2"; SU_PG="10.1${NEXT_ID}.0.1"
+    prompt_port CPORT "Enter FRP Control Port (unique per peer)" "$SU_FP"
+    AUTO_TOKEN=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16 2>/dev/null || openssl rand -hex 8)
+    prompt_token TOKEN "Peer token (each peer gets its own)" "$AUTO_TOKEN"
+    prompt_ip LGRE "Local GRE IP (unique per peer)" "$SU_LG"
+    prompt_ip PGRE "Peer GRE IP" "$SU_PG"
+    prompt_ports PPORTS "Ports to Reverse-Tunnel"
+    cli_add_peer --name "$NAME" --local-pub "$LOCAL_IRAN" --remote-pub "$IP_FOREIGN" \
+        --frp-port "$CPORT" --token "$TOKEN" --local-gre "$LGRE" --peer-gre "$PGRE" --ports "$PPORTS"
+    echo -e "\n${GREEN}=== On the FOREIGN server, run this script option 2 with: ===${NC}"
+    echo -e "IRAN Public IP: ${CYAN}${LOCAL_IRAN}${NC} | Port: ${CYAN}${CPORT}${NC} | Token: ${CYAN}${TOKEN}${NC}"
+    echo -e "GRE: local ${CYAN}${PGRE}${NC} peer ${CYAN}${LGRE}${NC} | Ports: ${CYAN}${PPORTS}${NC}"
+}
+
+menu_remove_peer() {
+    echo -e "\n${YELLOW}=== Remove Peer Tunnel ===${NC}"
+    peer_list_pretty || return 1
+    local ID
+    read -p "Peer id to remove: " ID
+    cli_remove_peer --id "$ID"
 }
 
 setup_foreign_server() {
@@ -448,10 +727,12 @@ show_logs() {
 }
 
 restart_all() {
-    echo -e "\n${CYAN}[*] Restarting GRE and FRP services...${NC}"
-    systemctl restart "${TUNNEL_NAME}.service" >/dev/null 2>&1
-    systemctl restart frps >/dev/null 2>&1
-    systemctl restart frpc >/dev/null 2>&1
+    echo -e "\n${CYAN}[*] Restarting GRE and FRP services (all tunnels)...${NC}"
+    local u
+    for u in /etc/systemd/system/gre-t*.service /etc/systemd/system/gre-tunnel.service /etc/systemd/system/frps*.service /etc/systemd/system/frpc.service; do
+        [[ -f "$u" ]] || continue
+        systemctl restart "$(basename "$u")" >/dev/null 2>&1 && echo -e "${GREEN}[✔️] $(basename "$u") restarted.${NC}"
+    done
     echo -e "${GREEN}[✔️] All services restarted.${NC}"
 }
 
@@ -464,15 +745,19 @@ uninstall_all() {
         systemctl disable frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
 
         # Remove systemd files
-        rm -f /etc/systemd/system/frps.service /etc/systemd/system/frpc.service /etc/systemd/system/${TUNNEL_NAME}.service
+        rm -f /etc/systemd/system/frps*.service /etc/systemd/system/frpc.service /etc/systemd/system/${TUNNEL_NAME}.service /etc/systemd/system/gre-t*.service
         systemctl daemon-reload
 
-        # Remove GRE interface
-        ip tunnel del "$TUNNEL_NAME" >/dev/null 2>&1 || true
+        # Remove GRE interfaces (legacy + all peers)
+        local gif
+        for gif in "$TUNNEL_NAME" $(ip tunnel show 2>/dev/null | grep -o 'gre-t[0-9]*'); do
+            ip tunnel del "$gif" >/dev/null 2>&1 || true
+        done
 
-        # Remove binaries & configs
+        # Remove binaries & configs (including peers registry)
         rm -f "${INSTALL_DIR}/frps" "${INSTALL_DIR}/frpc"
         rm -rf "$CONFIG_DIR"
+        rm -f "$PEERS_FILE"
 
         echo -e "${GREEN}[✔️] GRE & FRP completely uninstalled.${NC}"
     else
@@ -497,17 +782,21 @@ remove_tunnel_force() {
         systemctl stop frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
         systemctl disable frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
 
-        # Remove systemd files
-        rm -f /etc/systemd/system/frps.service /etc/systemd/system/frpc.service /etc/systemd/system/${TUNNEL_NAME}.service
+        # Remove systemd files (legacy + all peer tunnels)
+        rm -f /etc/systemd/system/frps*.service /etc/systemd/system/frpc.service /etc/systemd/system/${TUNNEL_NAME}.service /etc/systemd/system/gre-t*.service
         systemctl daemon-reload
         systemctl reset-failed >/dev/null 2>&1 || true
 
-        # Remove GRE interface
-        ip tunnel del "$TUNNEL_NAME" >/dev/null 2>&1 || true
+        # Remove GRE interfaces (legacy + all peers)
+        local gif
+        for gif in "$TUNNEL_NAME" $(ip tunnel show 2>/dev/null | grep -o 'gre-t[0-9]*'); do
+            ip tunnel del "$gif" >/dev/null 2>&1 || true
+        done
 
-        # Remove binaries & configs (panel untouched)
+        # Remove binaries & configs (panel untouched, peers registry cleared)
         rm -f "${INSTALL_DIR}/frps" "${INSTALL_DIR}/frpc"
         rm -rf "$CONFIG_DIR"
+        rm -f "$PEERS_FILE"
 
         echo -e "${GREEN}[✔️] Tunnel removed — GRE interface, FRP services, binaries and configs gone. Panel still running.${NC}"
 }
@@ -853,9 +1142,12 @@ main_menu() {
     echo "10) Optimize Tunnel (BBR + buffers + MTU/MSS, with backup)"
     echo "11) Restore Pre-Optimize Settings"
     echo "12) Optimization Status"
+    echo "13) Add Peer Tunnel (Iran: connect another foreign server)"
+    echo "14) List Peer Tunnels"
+    echo "15) Remove Peer Tunnel"
     echo "0) Exit"
     echo ""
-    read -p "Select an option [0-12]: " OPTION
+    read -p "Select an option [0-15]: " OPTION
 
     case "$OPTION" in
         1)
@@ -894,6 +1186,15 @@ main_menu() {
         12)
             tune_status
             ;;
+        13)
+            menu_add_peer
+            ;;
+        14)
+            peer_list_pretty
+            ;;
+        15)
+            menu_remove_peer
+            ;;
         0)
             echo "Exiting..."
             exit 0
@@ -915,6 +1216,8 @@ Usage:
   bash gre.sh setup-iran    --local-pub IP --remote-pub IP [--frp-port N] [--local-gre IP] [--peer-gre IP] [--token T] [--force]
   bash gre.sh setup-foreign --local-pub IP --remote-pub IP [--frp-port N] --token T --ports "443, 2083" [--local-gre IP] [--peer-gre IP] [--force]
   bash gre.sh status | remove-tunnel [--force] | show-panel-url
+  bash gre.sh add-peer --local-pub IP --remote-pub IP --frp-port N --token T --local-gre IP --peer-gre IP --ports "443, 2083" [--name LABEL]
+  bash gre.sh remove-peer --id N [--force] | peer-list | peer-token --id N
   bash gre.sh optimize | restore | tune-status
 EOF
 }
@@ -984,6 +1287,13 @@ if [[ $# -gt 0 ]]; then
     case "$1" in
         setup-iran) shift; cli_setup_iran "$@" ;;
         setup-foreign) shift; cli_setup_foreign "$@" ;;
+        add-peer) shift; cli_add_peer "$@" ;;
+        remove-peer) shift; cli_remove_peer "$@" ;;
+        peer-list) peer_list ;;
+        peer-token)
+            shift; ID=""
+            while [[ $# -gt 0 ]]; do case "$1" in --id) ID="$2"; shift 2 ;; *) shift ;; esac; done
+            peer_token "$ID" ;;
         status) check_status ;;
         optimize) tune_apply ;;
         restore) tune_restore ;;

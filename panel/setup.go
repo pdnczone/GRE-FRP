@@ -104,15 +104,17 @@ func detectPublicIP() string {
 // ---- POST /api/setup ----
 
 type setupRequest struct {
-	Role      string `json:"role"` // "iran" | "foreign"
+	Role      string `json:"role"` // "iran" | "foreign" | "add-peer"
+	Name      string `json:"name"` // add-peer label
 	LocalPub  string `json:"local_public"`
 	RemotePub string `json:"remote_public"`
 	LocalGre  string `json:"local_gre"`
 	PeerGre   string `json:"peer_gre"`
 	FrpPort   int    `json:"frp_port"`
-	Token     string `json:"token"` // foreign only (manual); iran auto-generates
-	Ports     string `json:"ports"` // foreign only, e.g. "443, 2083, 8080"
+	Token     string `json:"token"` // foreign/add-peer (manual or auto)
+	Ports     string `json:"ports"` // foreign/add-peer, e.g. "443, 2083, 8080"
 	Force     bool   `json:"force"`
+	Autogen   bool   `json:"autogen"` // add-peer: generate token server-side
 }
 
 func handleSetupPost(w http.ResponseWriter, r *http.Request) {
@@ -126,10 +128,24 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	body.LocalGre = strings.TrimSpace(body.LocalGre)
 	body.PeerGre = strings.TrimSpace(body.PeerGre)
 	body.Token = strings.TrimSpace(body.Token)
+	body.Name = strings.TrimSpace(body.Name)
+
+	// add-peer mode: each new foreign server gets its own token + tunnel.
+	// Port conflicts (same remotePort on two peers) are rejected with 409
+	// so the user picks another port instead of silently breaking a peer.
+	if body.Role == "add-peer" {
+		if body.Autogen || body.Token == "" {
+			body.Token = randomToken(16)
+		}
+		if len(loadPeers()) >= 5 {
+			http.Error(w, "peer table full (max 5 foreign servers) — remove one first", http.StatusConflict)
+			return
+		}
+	}
 
 	// validation (mirrors gre.sh prompt_* / validate_setup_common rules)
-	if body.Role != "iran" && body.Role != "foreign" {
-		http.Error(w, "role must be iran or foreign", http.StatusBadRequest)
+	if body.Role != "iran" && body.Role != "foreign" && body.Role != "add-peer" {
+		http.Error(w, "role must be iran, foreign or add-peer", http.StatusBadRequest)
 		return
 	}
 	if net.ParseIP(body.LocalPub) == nil {
@@ -154,7 +170,7 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var ports []int
-	if body.Role == "foreign" {
+	if body.Role == "foreign" || body.Role == "add-peer" {
 		if body.Token == "" {
 			http.Error(w, "token from Iran side is required", http.StatusBadRequest)
 			return
@@ -170,8 +186,20 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// add-peer pre-check: reject ports another tunnel already serves (409 + peer name)
+	if body.Role == "add-peer" {
+		if clash := peerPortClash(ports, -1); clash != "" {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]string{
+				"error": "port " + clash + " is already served by another tunnel — pick a different port",
+			})
+			return
+		}
+	}
+
 	// overwrite guard (per user decision: warn first, proceed only with force)
-	if tunnelExists() && !body.Force {
+	// add-peer never overwrites: it appends a new tunnel instead.
+	if body.Role != "add-peer" && tunnelExists() && !body.Force {
 		w.WriteHeader(http.StatusConflict)
 		writeJSON(w, map[string]string{
 			"error": "tunnel already exists — resubmit with force:true to overwrite",
@@ -206,7 +234,25 @@ func runInstaller(b setupRequest, ports []int) (string, []string, error) {
 	}
 	token := ""
 	args := []string{}
-	if b.Role == "iran" {
+	if b.Role == "add-peer" {
+		name := b.Name
+		if name == "" {
+			name = "peer"
+		}
+		strs := make([]string, len(ports))
+		for i, q := range ports {
+			strs[i] = strconv.Itoa(q)
+		}
+		token = b.Token
+		args = []string{"add-peer",
+			"--name", name,
+			"--local-pub", b.LocalPub, "--remote-pub", b.RemotePub,
+			"--frp-port", strconv.Itoa(b.FrpPort),
+			"--local-gre", b.LocalGre, "--peer-gre", b.PeerGre,
+			"--token", token,
+			"--ports", strings.Join(strs, ","),
+		}
+	} else if b.Role == "iran" {
 		token = randomToken(16)
 		args = []string{"setup-iran",
 			"--local-pub", b.LocalPub, "--remote-pub", b.RemotePub,
@@ -253,9 +299,67 @@ func runInstaller(b setupRequest, ports []int) (string, []string, error) {
 	return "", steps, nil
 }
 
+// ---- peers API: list tunnels + token lookup ----
+
+func handlePeersGet(w http.ResponseWriter, r *http.Request) {
+	if idStr := r.URL.Query().Get("id"); idStr != "" {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+		script, err := greScriptPath()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		cmd := exec.Command("bash", script, "peer-token", "--id", strconv.Itoa(id))
+		cmd.Env = append(os.Environ(), "GRE_SKIP_PANEL=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			http.Error(w, strings.TrimSpace(string(out)), http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]string{"id": idStr, "token": strings.TrimSpace(string(out))})
+		return
+	}
+	peers := livePeers()
+	if peers == nil {
+		peers = []peerLive{}
+	}
+	writeJSON(w, map[string]any{"peers": peers, "peer_count": len(peers), "max": 5})
+}
+
+// POST /api/peers just proxies validation errors from /api/setup role=add-peer.
+// The real creation path is /api/setup (role add-peer) so only one code path
+// shells out to gre.sh. This endpoint exists for future per-peer edits.
+func handlePeersPost(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "use POST /api/setup with role=add-peer", http.StatusBadRequest)
+}
+
 func isV4(s string) bool {
 	ip := net.ParseIP(s)
 	return ip != nil && ip.To4() != nil
+}
+
+// peerPortClash reports "PORT (peer NAME)" for the first requested port that
+// another registered tunnel already serves. excludeID skips one peer (<0 = none).
+func peerPortClash(want []int, excludeID int) string {
+	claimed := map[int]string{}
+	for _, p := range loadPeers() {
+		if p.ID == excludeID {
+			continue
+		}
+		for _, port := range p.Ports {
+			claimed[port] = p.Name
+		}
+	}
+	for _, port := range want {
+		if name, ok := claimed[port]; ok {
+			return fmt.Sprintf("%d (peer %s)", port, name)
+		}
+	}
+	return ""
 }
 
 func parsePorts(s string) []int {

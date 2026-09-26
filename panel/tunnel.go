@@ -10,41 +10,66 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // status of GRE + FRP on this machine.
 func handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"local": localStatus()})
+	st := localStatus()
+	peers := livePeers()
+	writeJSON(w, map[string]any{"local": st, "peers": peers, "peer_count": len(peers)})
 }
 
 func handleLogs(w http.ResponseWriter, r *http.Request) {
 	svc := r.URL.Query().Get("svc")
-	if svc != "frps" && svc != "frpc" {
+	n := r.URL.Query().Get("n")
+	lines := 100
+	if v, err := strconv.Atoi(n); err == nil && v >= 10 && v <= 1000 {
+		lines = v
+	}
+	// allowed units: legacy frps/frpc, per-peer frps-N, GRE units, panel itself
+	allowed := map[string]bool{"frps": true, "frpc": true, "gre-panel": true,
+		"gre-tunnel": true, "gre-tunnel.service": true}
+	if !allowed[svc] {
+		if strings.HasPrefix(svc, "frps-") || strings.HasPrefix(svc, "gre-t") {
+			allowed[svc] = true
+		}
+	}
+	if !allowed[svc] {
+		// unknown? fall back to whichever FRP side exists
 		svc = "frps"
+		if _, err := os.Stat("/etc/frp/frpc.toml"); err == nil {
+			svc = "frpc"
+		}
+	}
+	unit := svc
+	if !strings.HasSuffix(unit, ".service") && unit != "gre-panel" {
+		// journalctl accepts short names for frps/frpc too, keep as-is
 	}
 	if _, err := exec.LookPath("journalctl"); err == nil {
-		out, err := exec.Command("journalctl", "-u", svc, "-n", "50", "--no-pager").CombinedOutput()
+		out, err := exec.Command("journalctl", "-u", unit, "-n", strconv.Itoa(lines), "--no-pager").CombinedOutput()
 		if err == nil {
-			writeJSON(w, map[string]string{"logs": string(out)})
+			writeJSON(w, map[string]string{"logs": string(out), "svc": svc})
 			return
 		}
 	}
 	// fallback: log files
-	for _, p := range []string{"/var/log/" + svc + ".log", "/root/" + svc + ".log"} {
-		if data, err := os.ReadFile(p); err == nil {
-			writeJSON(w, map[string]string{"logs": string(data)})
+	for _, q := range []string{"/var/log/" + svc + ".log", "/root/" + svc + ".log"} {
+		if data, err := os.ReadFile(q); err == nil {
+			writeJSON(w, map[string]string{"logs": string(data), "svc": svc})
 			return
 		}
 	}
-	writeJSON(w, map[string]string{"logs": "(no logs available)"})
+	writeJSON(w, map[string]string{"logs": "(no logs available — is " + svc + " installed?)", "svc": svc})
 }
 
 // actions: restart frps/frpc/gre, ping peer, optimize/restore network tuning.
 func handleAction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Action string `json:"action"`
+		PeerID int    `json:"peer_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -52,7 +77,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	switch body.Action {
 	case "restart-frps", "restart-frpc", "restart-gre", "ping", "remove-tunnel":
-		out, err := runAction(body.Action)
+		out, err := runAction(body.Action, body.PeerID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -71,25 +96,30 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func runAction(action string) (string, error) {
+func runAction(action string, peerID int) (string, error) {
 	switch action {
 	case "restart-frps":
-		out, err := exec.Command("systemctl", "restart", "frps").CombinedOutput()
+		svc := peerFrpsSvc(peerID)
+		out, err := exec.Command("systemctl", "restart", svc).CombinedOutput()
 		return string(out), err
 	case "restart-frpc":
 		out, err := exec.Command("systemctl", "restart", "frpc").CombinedOutput()
 		return string(out), err
 	case "restart-gre":
-		out, err := exec.Command("systemctl", "restart", "gre-tunnel.service").CombinedOutput()
+		svc := peerGreSvc(peerID)
+		out, err := exec.Command("systemctl", "restart", svc).CombinedOutput()
 		return string(out), err
 	case "ping":
-		st := localStatus()
-		if st.GrePeer == "" {
+		target := peerPingTarget(peerID)
+		if target == "" {
 			return "", fmt.Errorf("no GRE peer known")
 		}
-		out, err := exec.Command("ping", "-c", "3", "-W", "2", st.GrePeer).CombinedOutput()
+		out, err := exec.Command("ping", "-c", "3", "-W", "2", target).CombinedOutput()
 		return string(out), err
 	case "remove-tunnel":
+		if peerID > 0 {
+			return removePeerViaInstaller(peerID)
+		}
 		// mirror of gre.sh remove_tunnel_force(): GRE + FRP gone, panel untouched.
 		// Implemented via the installer itself (single source of truth) so the
 		// shell-out path and the menu path can never drift apart.
@@ -142,6 +172,186 @@ func removeViaInstaller() (string, error) {
 	}
 	if runErr != nil {
 		return o, fmt.Errorf("remove-tunnel failed: %w", runErr)
+	}
+	return o, nil
+}
+
+// ---- multi-peer: registry + per-tunnel inspection ----
+// peers.json (written by gre.sh add-peer) is the source of truth for how
+// many foreign servers hang off this Iran. Legacy single installs without
+// a registry fall back to the old single-tunnel view.
+
+type peerRecord struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	LocalPub string `json:"local_pub"`
+	RemotePub string `json:"remote_pub"`
+	FrpPort  int    `json:"frp_port"`
+	LocalGre string `json:"local_gre"`
+	PeerGre  string `json:"peer_gre"`
+	Ports    []int  `json:"ports"`
+	GreIf    string `json:"gre_if"`
+	FrpsSvc  string `json:"frps_svc"`
+}
+
+type peerLive struct {
+	peerRecord
+	GreUp    bool   `json:"gre_up"`
+	GreInner string `json:"gre_inner"`
+	FrpUp    bool   `json:"frp_up"`
+	PingOK   bool   `json:"ping_ok"`
+	PingMs   string `json:"ping_ms"`
+	Rx       *uint64 `json:"rx"`
+	Tx       *uint64 `json:"tx"`
+}
+
+func peersFile() string { return configDir + "/peers.json" }
+
+func loadPeers() []peerRecord {
+	data, err := os.ReadFile(peersFile())
+	if err != nil {
+		return nil
+	}
+	var v struct {
+		Peers []peerRecord `json:"peers"`
+	}
+	if json.Unmarshal(data, &v) != nil {
+		return nil
+	}
+	return v.Peers
+}
+
+func findPeer(id int) *peerRecord {
+	for _, p := range loadPeers() {
+		if p.ID == id {
+			c := p
+			return &c
+		}
+	}
+	return nil
+}
+
+// unit names for actions; peerID 0 = legacy default.
+func peerFrpsSvc(peerID int) string {
+	if peerID > 0 {
+		if p := findPeer(peerID); p != nil && p.FrpsSvc != "" {
+			return p.FrpsSvc
+		}
+		if peerID > 1 {
+			return fmt.Sprintf("frps-%d", peerID)
+		}
+	}
+	return "frps"
+}
+
+func peerGreSvc(peerID int) string {
+	if peerID > 0 {
+		if p := findPeer(peerID); p != nil && p.GreIf != "" {
+			return p.GreIf + ".service"
+		}
+		if peerID > 1 {
+			return fmt.Sprintf("gre-t%d.service", peerID)
+		}
+	}
+	return "gre-tunnel.service"
+}
+
+func peerPingTarget(peerID int) string {
+	if peerID > 0 {
+		if p := findPeer(peerID); p != nil && p.PeerGre != "" {
+			return p.PeerGre
+		}
+	}
+	return localStatus().GrePeer
+}
+
+func ifaceTraffic(ifname string) (rx, tx *uint64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return nil, nil
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, ifname+":") {
+			continue
+		}
+		f := strings.Fields(strings.TrimPrefix(line, ifname+":"))
+		if len(f) < 9 {
+			return nil, nil
+		}
+		var r, t uint64
+		if _, err := fmt.Sscanf(f[0], "%d", &r); err != nil {
+			return nil, nil
+		}
+		if _, err := fmt.Sscanf(f[8], "%d", &t); err != nil {
+			return nil, nil
+		}
+		return &r, &t
+	}
+	return nil, nil
+}
+
+func ifaceInner(ifname string) string {
+	out, err := exec.Command("ip", "-4", "addr", "show", "dev", ifname).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "inet ") {
+			return strings.Fields(line)[1]
+		}
+	}
+	return ""
+}
+
+func svcActive(svc string) bool {
+	out, err := exec.Command("systemctl", "is-active", svc).CombinedOutput()
+	return err == nil && strings.TrimSpace(string(out)) == "active"
+}
+
+// livePeers inspects every registered peer: GRE up, frps up, ping, counters.
+func livePeers() []peerLive {
+	recs := loadPeers()
+	if len(recs) == 0 {
+		return nil
+	}
+	out := make([]peerLive, 0, len(recs))
+	for _, p := range recs {
+		l := peerLive{peerRecord: p}
+		if _, err := exec.Command("ip", "tunnel", "show").CombinedOutput(); err == nil {
+			// presence check via interface address (works without parsing tun show)
+			l.GreInner = ifaceInner(p.GreIf)
+			l.GreUp = l.GreInner != ""
+		}
+		l.FrpUp = svcActive(p.FrpsSvc)
+		if p.PeerGre != "" {
+			start := time.Now()
+			if err := exec.Command("ping", "-c", "1", "-W", "2", p.PeerGre).Run(); err == nil {
+				l.PingOK = true
+				l.PingMs = fmt.Sprintf("%.0fms", float64(time.Since(start).Microseconds())/1000)
+			}
+		}
+		l.Rx, l.Tx = ifaceTraffic(p.GreIf)
+		out = append(out, l)
+	}
+	return out
+}
+
+func removePeerViaInstaller(id int) (string, error) {
+	script, err := greScriptPath()
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command("bash", script, "remove-peer", "--id", fmt.Sprint(id), "--force")
+	cmd.Env = append(os.Environ(), "GRE_SKIP_PANEL=1")
+	out, runErr := cmd.CombinedOutput()
+	o := strings.TrimSpace(string(out))
+	if o == "" {
+		o = fmt.Sprintf("peer %d removed", id)
+	}
+	if runErr != nil {
+		return o, fmt.Errorf("remove-peer failed: %w", runErr)
 	}
 	return o, nil
 }
