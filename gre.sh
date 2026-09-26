@@ -197,6 +197,9 @@ EOF
     echo -e "2. Port:           ${CYAN}${BIND_PORT}${NC}"
     echo -e "3. Token:          ${CYAN}${TOKEN}${NC}"
     echo -e "${GREEN}=================================================================${NC}\n"
+
+    # panel comes free with the tunnel — no extra step needed
+    install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
 }
 
 setup_foreign_server() {
@@ -302,6 +305,9 @@ EOF
     echo -e "Reverse Ports:        ${CYAN}${PORTS_CLEANED}${NC} (TCP & UDP)"
     echo -e "FRP TLS Encryption:   ${GREEN}Enabled${NC}"
     echo -e "${GREEN}=================================================================${NC}\n"
+
+    # panel comes free with the tunnel — no extra step needed
+    install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
 }
 
 check_status() {
@@ -386,35 +392,61 @@ uninstall_all() {
 
 PANEL_DIR="/usr/local/gre-panel"
 PANEL_BIN="/usr/local/bin/gre-panel"
-PANEL_BRANCH="${PANEL_BRANCH:-panel}"
 
 install_panel() {
     echo -e "${CYAN}[*] Installing GRE-FRP web panel...${NC}"
 
-    if ! command -v go >/dev/null 2>&1; then
-        echo -e "${CYAN}[*] Installing Go to build the panel...${NC}"
-        apt-get update -qq
-        apt-get install -y -qq golang-go
-    fi
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)  PANEL_ASSET="gre-panel-linux-amd64" ;;
+        aarch64|arm64) PANEL_ASSET="gre-panel-linux-arm64" ;;
+        *) echo -e "${RED}[!] Unsupported arch for panel: $ARCH${NC}"; return 1 ;;
+    esac
 
     TMP_PANEL="$(mktemp -d)"
-    if ! curl -fsSL "https://github.com/pdnczone/GRE-FRP/archive/refs/heads/${PANEL_BRANCH}.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
-        echo -e "${RED}[!] Failed to download panel sources.${NC}"
-        rm -rf "$TMP_PANEL"
-        return 1
+    DL_OK=0
+    # try latest release first (prebuilt, no Go needed)
+    LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/GRE-FRP/releases/latest" 2>/dev/null) || true
+    if [[ -n "$LATEST_JSON" ]]; then
+        DL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*${PANEL_ASSET}\"" | head -1 | cut -d'"' -f4)
+        if [[ -n "$DL_URL" ]] && curl -fsSL --max-time 60 "$DL_URL" -o "$TMP_PANEL/gre-panel"; then
+            DL_OK=1
+        fi
+        GREPANEL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*grepanel\"" | head -1 | cut -d'"' -f4)
+        if [[ -n "$GREPANEL_URL" ]]; then
+            curl -fsSL --max-time 30 "$GREPANEL_URL" -o /usr/local/bin/grepanel 2>/dev/null && chmod +x /usr/local/bin/grepanel || true
+        fi
     fi
-    tar -xzf "$TMP_PANEL/panel.tgz" -C "$TMP_PANEL"
-    SRC="$TMP_PANEL/GRE-FRP-${PANEL_BRANCH}/panel"
-    if [[ ! -f "$SRC/main.go" ]]; then
-        # tarball top-level name may differ; find main.go instead
+
+    if [[ "$DL_OK" -ne 1 ]]; then
+        # fallback: build from source (needs Go)
+        echo -e "${YELLOW}[*] No prebuilt panel found — building from source...${NC}"
+        if ! command -v go >/dev/null 2>&1; then
+            echo -e "${CYAN}[*] Installing Go to build the panel...${NC}"
+            apt-get update -qq
+            apt-get install -y -qq golang-go
+        fi
+        if ! curl -fsSL "https://github.com/pdnczone/GRE-FRP/archive/refs/heads/main.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
+            echo -e "${RED}[!] Failed to download panel sources.${NC}"
+            rm -rf "$TMP_PANEL"
+            return 1
+        fi
+        tar -xzf "$TMP_PANEL/panel.tgz" -C "$TMP_PANEL"
         SRC="$(dirname "$(find "$TMP_PANEL" -name main.go -path '*panel*' | head -1)")"
+        if [[ -z "$SRC" || ! -f "$SRC/main.go" ]]; then
+            echo -e "${RED}[!] Panel sources not found in archive.${NC}"
+            rm -rf "$TMP_PANEL"
+            return 1
+        fi
+        (cd "$SRC" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$TMP_PANEL/gre-panel" .)
+        if [[ -f "$SRC/grepanel" ]]; then
+            cp "$SRC/grepanel" /usr/local/bin/grepanel
+            chmod +x /usr/local/bin/grepanel
+        fi
     fi
-    (cd "$SRC" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$PANEL_BIN" .)
+
+    cp "$TMP_PANEL/gre-panel" "$PANEL_BIN"
     chmod +x "$PANEL_BIN"
-    if [[ -f "$SRC/grepanel" ]]; then
-        cp "$SRC/grepanel" /usr/local/bin/grepanel
-        chmod +x /usr/local/bin/grepanel
-    fi
     rm -rf "$TMP_PANEL"
 
     cat > /etc/systemd/system/gre-panel.service <<EOF
@@ -470,7 +502,7 @@ main_menu() {
     echo "4) View FRP Live Logs"
     echo "5) Restart Tunnel Services"
     echo "6) Uninstall Everything (GRE + FRP)"
-    echo "7) Install Web Panel (control GRE+FRP from browser)"
+    echo "7) Install/Reinstall Web Panel (prebuilt binary, no Go needed)"
     echo "8) Show Panel URL"
     echo "0) Exit"
     echo ""
