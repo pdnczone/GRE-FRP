@@ -224,6 +224,7 @@ bindPort = ${BIND_PORT}
 auth.method = "token"
 auth.token = "${TOKEN}"
 transport.tls.force = false
+transport.maxPoolCount = 50
 EOF
     cat <<EOF > /etc/systemd/system/frps.service
 [Unit]
@@ -282,6 +283,7 @@ serverPort = ${SERVER_PORT}
 auth.method = "token"
 auth.token = "${TOKEN}"
 transport.tls.enable = true
+transport.poolCount = 10
 
 EOF
     local PORT
