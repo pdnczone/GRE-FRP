@@ -41,7 +41,7 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"logs": "(no logs available)"})
 }
 
-// actions: restart frps/frpc/gre, ping peer.
+// actions: restart frps/frpc/gre, ping peer, optimize/restore network tuning.
 func handleAction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Action string `json:"action"`
@@ -55,6 +55,14 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		out, err := runAction(body.Action)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok", "output": out})
+	case "optimize", "restore", "tune-status":
+		// network tuning via the installer (single source of truth).
+		out, err := tuneViaInstaller(body.Action)
+		if err != nil {
+			http.Error(w, out+": "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, map[string]string{"status": "ok", "output": out})
@@ -92,6 +100,29 @@ func runAction(action string) (string, error) {
 		return out, nil
 	}
 	return "", fmt.Errorf("unknown action")
+}
+
+// tuneViaInstaller runs `gre.sh optimize|restore|tune-status` and returns its
+// output as the action result (single source of truth, same as menu/CLI).
+func tuneViaInstaller(action string) (string, error) {
+	script, err := greScriptPath()
+	if err != nil {
+		return "", err
+	}
+	arg := map[string]string{
+		"optimize": "optimize", "restore": "restore", "tune-status": "tune-status",
+	}[action]
+	cmd := exec.Command("bash", script, arg)
+	cmd.Env = append(os.Environ(), "GRE_SKIP_PANEL=1")
+	out, runErr := cmd.CombinedOutput()
+	o := strings.TrimSpace(string(out))
+	if o == "" {
+		o = action + " done"
+	}
+	if runErr != nil {
+		return o, fmt.Errorf("tune command failed: %w", runErr)
+	}
+	return o, nil
 }
 
 // removeViaInstaller runs `gre.sh remove-tunnel --force` and returns its

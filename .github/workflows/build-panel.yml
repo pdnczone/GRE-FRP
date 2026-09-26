@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "panel/**"
+      - "gre.sh"
       - ".github/workflows/build-panel.yml"
 
 permissions:
@@ -29,6 +30,13 @@ jobs:
           ./gre-panel-linux-amd64 --version
           ls -la gre-panel-linux-*
 
+      - name: Sync gre.sh + grepanel into release
+        run: |
+          mkdir -p panel/dist
+          cp gre.sh panel/dist/gre.sh
+          cp panel/grepanel panel/dist/grepanel
+          ls -la panel/dist/
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -38,4 +46,5 @@ jobs:
           files: |
             panel/gre-panel-linux-amd64
             panel/gre-panel-linux-arm64
-            panel/grepanel
+            panel/dist/gre.sh
+            panel/dist/grepanel

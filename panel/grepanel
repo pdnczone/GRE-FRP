@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # grepanel — control the GRE-FRP web panel after install.
-# Usage: grepanel <status|logs|restart|url|password|uninstall>
+# Usage: grepanel <status|logs|restart|url|password|uninstall|optimize|restore|tune-status>
 set -euo pipefail
 
 PANEL_BIN="/usr/local/bin/gre-panel"
@@ -47,8 +47,16 @@ case "$cmd" in
     systemctl daemon-reload
     echo "gre-panel removed (config kept in /etc/gre-panel)"
     ;;
+  optimize|restore|tune-status)
+    # delegate to the installed gre.sh (single source of truth for tuning)
+    for p in /usr/local/bin/gre.sh /root/gre.sh ./gre.sh; do
+      if [[ -f "$p" ]]; then SCRIPT="$p"; break; fi
+    done
+    if [[ -z "${SCRIPT:-}" ]]; then echo "gre.sh not found (expected /usr/local/bin/gre.sh)"; exit 1; fi
+    exec bash "$SCRIPT" "$cmd"
+    ;;
   *)
-    echo "Usage: grepanel <status|logs|restart|url|password|uninstall>"
+    echo "Usage: grepanel <status|logs|restart|url|password|uninstall|optimize|restore|tune-status>"
     exit 1
     ;;
 esac

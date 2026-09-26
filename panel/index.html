@@ -369,9 +369,12 @@
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-gre">Restart GRE</button>
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-frps">Restart frps</button>
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-frpc">Restart frpc</button>
+            <button class="hashem-btn hashem-btn-primary" id="optimizeBtn">⚡ Optimize tunnel</button>
+            <button class="hashem-btn hashem-btn-secondary hidden" id="restoreBtn">Restore pre-optimize</button>
             <button class="hashem-btn hashem-btn-danger" id="removeTunnelBtn">Remove tunnel</button>
           </div>
           <pre id="actOut" class="logs hidden" style="margin-top:4px"></pre>
+          <div class="qs-hint" id="tuneHint">Optimize: BBR + 16MB buffers + backlog + forwarding + GRE MTU 1400 + MSS clamp. Backs up current settings first — Restore brings them back.</div>
         </div>
       </section>
       <section id="tab-setup" hidden>
@@ -876,6 +879,33 @@ $('removeTunnelBtn').onclick = async () => {
     $('actOut').classList.remove('hidden');
     $('actOut').textContent = r.output || 'tunnel removed';
     toast('tunnel removed');
+    refresh();
+  } catch(e) { toast(e.message); }
+  b.disabled = false;
+};
+$('optimizeBtn').onclick = async () => {
+  if (!confirm('Optimize network for tunnel throughput? (BBR + buffers + MTU/MSS — current settings are backed up first)')) return;
+  const b = $('optimizeBtn');
+  b.disabled = true;
+  try {
+    const r = await api('/api/action', {action: 'optimize'});
+    $('actOut').classList.remove('hidden');
+    $('actOut').textContent = r.output || 'optimized';
+    $('restoreBtn').classList.remove('hidden');
+    toast('tunnel optimized');
+    refresh();
+  } catch(e) { toast(e.message); }
+  b.disabled = false;
+};
+$('restoreBtn').onclick = async () => {
+  if (!confirm('Restore the settings from before optimization?')) return;
+  const b = $('restoreBtn');
+  b.disabled = true;
+  try {
+    const r = await api('/api/action', {action: 'restore'});
+    $('actOut').classList.remove('hidden');
+    $('actOut').textContent = r.output || 'restored';
+    toast('settings restored');
     refresh();
   } catch(e) { toast(e.message); }
   b.disabled = false;

@@ -513,6 +513,128 @@ remove_tunnel_force() {
 PANEL_DIR="/usr/local/gre-panel"
 PANEL_BIN="/usr/local/bin/gre-panel"
 
+# ---- Network optimization for tunnel throughput ----
+# Same on both roles (auto-detects nothing: these are role-independent).
+# Backup lives in /etc/gre-panel/tune.bak (key=value snapshot), restored by
+# tune_restore(). Idempotent — safe to run twice.
+TUNE_BACKUP="/etc/gre-panel/tune.bak"
+
+tune_backup_once() {
+    if [[ -f "$TUNE_BACKUP" ]]; then return 0; fi
+    mkdir -p "$(dirname "$TUNE_BACKUP")"
+    : > "$TUNE_BACKUP"
+    local k v
+    for k in net.ipv4.ip_forward net.core.rmem_max net.core.wmem_max \
+             net.core.netdev_max_backlog net.ipv4.tcp_congestion_control; do
+        v=$(sysctl -n "$k" 2>/dev/null) || v=""
+        echo "$k=$v" >> "$TUNE_BACKUP"
+    done
+    if lsmod 2>/dev/null | grep -q "^tcp_bbr"; then echo "tcp_bbr=loaded" >> "$TUNE_BACKUP";
+    else echo "tcp_bbr=absent" >> "$TUNE_BACKUP"; fi
+    echo "gre_mtu=$(ip link show "$TUNNEL_NAME" 2>/dev/null | grep -o 'mtu [0-9]*' | awk '{print $2}')" >> "$TUNE_BACKUP"
+    if iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1; then
+        echo "mss_clamp=present" >> "$TUNE_BACKUP"
+    else
+        echo "mss_clamp=absent" >> "$TUNE_BACKUP"
+    fi
+    echo -e "${CYAN}[*] Current settings backed up to ${TUNE_BACKUP}.${NC}"
+}
+
+tune_apply() {
+    tune_backup_once
+    echo -e "${CYAN}[*] Optimizing network stack for tunnel throughput...${NC}"
+
+    # 1. BBR congestion control (best for high-latency links like IR↔TR)
+    if modprobe tcp_bbr >/dev/null 2>&1 || lsmod 2>/dev/null | grep -q "^tcp_bbr"; then
+        sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 && echo -e "${GREEN}[✔️] TCP congestion control → bbr${NC}" || echo -e "${YELLOW}[!] bbr unavailable — keeping current CC.${NC}"
+    else
+        echo -e "${YELLOW}[!] tcp_bbr module not available — keeping current CC.${NC}"
+    fi
+
+    # 2. Bigger socket buffers (16MB) so fast links don't stall
+    sysctl -w net.core.rmem_max=16777216 >/dev/null 2>&1
+    sysctl -w net.core.wmem_max=16777216 >/dev/null 2>&1
+    echo -e "${GREEN}[✔️] Socket buffers → 16MB (rmem_max/wmem_max)${NC}"
+
+    # 3. Deeper NIC queue (packet bursts under load)
+    sysctl -w net.core.netdev_max_backlog=5000 >/dev/null 2>&1
+    echo -e "${GREEN}[✔️] netdev backlog → 5000${NC}"
+
+    # 4. IP forwarding (tunnel needs it)
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+    echo -e "${GREEN}[✔️] IPv4 forwarding → on${NC}"
+
+    # 5. GRE MTU to tunnel-safe 1400 (avoids fragmentation over GRE+FRP)
+    if ip link show "$TUNNEL_NAME" >/dev/null 2>&1; then
+        ip link set dev "$TUNNEL_NAME" mtu 1400 >/dev/null 2>&1 && echo -e "${GREEN}[✔️] ${TUNNEL_NAME} MTU → 1400${NC}" || echo -e "${YELLOW}[!] Could not set GRE MTU.${NC}"
+    else
+        echo -e "${YELLOW}[*] No ${TUNNEL_NAME} interface yet — MTU will apply on next setup.${NC}"
+    fi
+
+    # 6. MSS clamp (idempotent) so TCP never fragments through the tunnel
+    iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 || \
+        iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+    echo -e "${GREEN}[✔️] TCP MSS clamp → on${NC}"
+
+    # 7. Persist across reboots
+    mkdir -p /etc/sysctl.d
+    cat > /etc/sysctl.d/99-gre-tune.conf <<'EOF'
+# GRE-FRP tunnel optimization (applied by Optimize button / tune command)
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.netdev_max_backlog = 5000
+net.ipv4.ip_forward = 1
+EOF
+    if sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
+        echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.d/99-gre-tune.conf
+    fi
+    echo -e "${GREEN}[✔️] Settings persisted in /etc/sysctl.d/99-gre-tune.conf${NC}"
+    echo -e "${GREEN}[✔️] Optimization done — run Restore if anything feels worse.${NC}"
+}
+
+tune_restore() {
+    if [[ ! -f "$TUNE_BACKUP" ]]; then
+        echo -e "${YELLOW}[!] No backup found at ${TUNE_BACKUP} — nothing to restore.${NC}"
+        return 1
+    fi
+    echo -e "${CYAN}[*] Restoring pre-optimization settings...${NC}"
+    local k v
+    while IFS='=' read -r k v; do
+        case "$k" in
+            net.*) [[ -n "$v" ]] && sysctl -w "$k=$v" >/dev/null 2>&1 && echo -e "${GREEN}[✔️] $k → $v${NC}" ;;
+            gre_mtu)
+                if [[ -n "$v" ]] && ip link show "$TUNNEL_NAME" >/dev/null 2>&1; then
+                    ip link set dev "$TUNNEL_NAME" mtu "$v" >/dev/null 2>&1 && echo -e "${GREEN}[✔️] ${TUNNEL_NAME} MTU → $v${NC}"
+                fi ;;
+            mss_clamp)
+                if [[ "$v" == "absent" ]]; then
+                    iptables -t mangle -D POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1 || true
+                    echo -e "${GREEN}[✔️] MSS clamp removed${NC}"
+                fi ;;
+        esac
+    done < "$TUNE_BACKUP"
+    rm -f /etc/sysctl.d/99-gre-tune.conf
+    echo -e "${GREEN}[✔️] Restored — backup kept at ${TUNE_BACKUP} (deleted on next optimize run).${NC}"
+    rm -f "$TUNE_BACKUP"
+}
+
+tune_status() {
+    echo -e "${CYAN}=== Tunnel Optimization Status ===${NC}"
+    echo "CC:        $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo ?)"
+    echo "rmem_max:  $(sysctl -n net.core.rmem_max 2>/dev/null || echo ?)"
+    echo "wmem_max:  $(sysctl -n net.core.wmem_max 2>/dev/null || echo ?)"
+    echo "backlog:   $(sysctl -n net.core.netdev_max_backlog 2>/dev/null || echo ?)"
+    echo "forward:   $(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo ?)"
+    echo "GRE MTU:   $(ip link show "$TUNNEL_NAME" 2>/dev/null | grep -o 'mtu [0-9]*' | awk '{print $2}' || echo 'no interface')"
+    if iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu >/dev/null 2>&1; then
+        echo "MSS clamp: on"
+    else
+        echo "MSS clamp: off"
+    fi
+    if [[ -f "$TUNE_BACKUP" ]]; then echo "Backup:    $TUNE_BACKUP (restore available)"; else echo "Backup:    none"; fi
+    [[ -f /etc/sysctl.d/99-gre-tune.conf ]] && echo "Persisted: yes (/etc/sysctl.d/99-gre-tune.conf)" || echo "Persisted: no"
+}
+
 install_panel() {
     echo -e "${CYAN}[*] Installing GRE-FRP web panel...${NC}"
 
@@ -540,6 +662,10 @@ install_panel() {
         GREPANEL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*grepanel\"" | head -1 | cut -d'"' -f4)
         if [[ -n "$GREPANEL_URL" ]]; then
             curl -fsSL --max-time 30 "$GREPANEL_URL" -o /usr/local/bin/grepanel 2>/dev/null && chmod +x /usr/local/bin/grepanel || true
+        fi
+        GRESH_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*gre\\.sh\"" | head -1 | cut -d'"' -f4)
+        if [[ -n "$GRESH_URL" ]]; then
+            curl -fsSL --max-time 30 "$GRESH_URL" -o /usr/local/bin/gre.sh 2>/dev/null && chmod +x /usr/local/bin/gre.sh || true
         fi
     fi
 
@@ -697,6 +823,9 @@ update_all() {
     # 3. replace running script only after everything succeeded
     cp "$TMP_U/gre.sh" "$0" 2>/dev/null || cp "$TMP_U/gre.sh" ./gre.sh
     chmod +x "$0" 2>/dev/null || true
+    # 4. sync a copy next to the panel binary so the web panel + grepanel
+    # always shell out to the latest tune/setup logic (single source of truth)
+    cp "$TMP_U/gre.sh" /usr/local/bin/gre.sh 2>/dev/null && chmod +x /usr/local/bin/gre.sh || true
     PANEL_VER=$("$PANEL_BIN" --version 2>/dev/null || echo "unknown")
     echo -e "${GREEN}[✔️] Update complete — script + panel are latest (panel: ${PANEL_VER}). Re-run the script to use the new menu.${NC}"
 }
@@ -718,9 +847,12 @@ main_menu() {
     echo "7) Update All (latest script + latest panel binary)"
     echo "8) Show Panel URL + Username + Password"
     echo "9) Remove Tunnel (GRE + FRP, panel stays)"
+    echo "10) Optimize Tunnel (BBR + buffers + MTU/MSS, with backup)"
+    echo "11) Restore Pre-Optimize Settings"
+    echo "12) Optimization Status"
     echo "0) Exit"
     echo ""
-    read -p "Select an option [0-9]: " OPTION
+    read -p "Select an option [0-12]: " OPTION
 
     case "$OPTION" in
         1)
@@ -750,6 +882,15 @@ main_menu() {
         9)
             remove_tunnel
             ;;
+        10)
+            tune_apply
+            ;;
+        11)
+            tune_restore
+            ;;
+        12)
+            tune_status
+            ;;
         0)
             echo "Exiting..."
             exit 0
@@ -771,6 +912,7 @@ Usage:
   bash gre.sh setup-iran    --local-pub IP --remote-pub IP [--frp-port N] [--local-gre IP] [--peer-gre IP] [--token T] [--force]
   bash gre.sh setup-foreign --local-pub IP --remote-pub IP [--frp-port N] --token T --ports "443, 2083" [--local-gre IP] [--peer-gre IP] [--force]
   bash gre.sh status | remove-tunnel [--force] | show-panel-url
+  bash gre.sh optimize | restore | tune-status
 EOF
 }
 
@@ -840,6 +982,9 @@ if [[ $# -gt 0 ]]; then
         setup-iran) shift; cli_setup_iran "$@" ;;
         setup-foreign) shift; cli_setup_foreign "$@" ;;
         status) check_status ;;
+        optimize) tune_apply ;;
+        restore) tune_restore ;;
+        tune-status) tune_status ;;
         remove-tunnel)
             if [[ "${2:-}" == "--force" ]]; then remove_tunnel_force; else remove_tunnel; fi ;;
         show-panel-url) show_panel_url ;;
