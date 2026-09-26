@@ -14,7 +14,7 @@ html{-webkit-text-size-adjust:100%}
 /* Baseline typography scale & spacing rhythm */
 :root {
   /* Typography scale — rem-based, Apple HIG consistent hierarchy */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Vazirmatn", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --fs-h1: 1.5rem;          /* 24px */
@@ -56,12 +56,24 @@ html{-webkit-text-size-adjust:100%}
   --sp-12: 3rem;     /* 48px */
 
   /* Controls — one geometry for every button and field in the panel */
-  --ctl-h: 34px;
+  --ctl-h: 36px;
   --ctl-r: 10px;
-  --ctl-px: 13px;
+  --ctl-px: 14px;
   --ctl-fs: var(--fs-body);
-  --ctl-fw: 590;
+  --ctl-fw: 600;
   --field: var(--s2);
+
+  /* Radius scale */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  /* Soft status tints (badges, boxes) */
+  --ok-soft: color-mix(in srgb, var(--ok) 12%, transparent);
+  --wr-soft: color-mix(in srgb, var(--wr) 12%, transparent);
+  --er-soft: color-mix(in srgb, var(--er) 12%, transparent);
+  --info-soft: color-mix(in srgb, var(--info) 12%, transparent);
 
   /* Status colors */
   --ok: #22c55e;
@@ -69,9 +81,13 @@ html{-webkit-text-size-adjust:100%}
   --er: #ef4444;
   --info: #3b82f6;
   --spring: cubic-bezier(.32, .72, 0, 1);
-  --accent-h: 221;
-  --accent-s: 83%;
-  --accent-l: 53%;
+  /* Accent — single identity color, derived tints. Dark & light share the hue. */
+  --accent-h: 217;
+  --accent-s: 91%;
+  --accent-l: 60%;
+  --ac: hsl(var(--accent-h) var(--accent-s) var(--accent-l));
+  --ac-on: #ffffff;
+  --ac-soft: color-mix(in srgb, var(--ac) 12%, transparent);
 }
 
 /* Glass material — subtle, professional */
@@ -203,24 +219,31 @@ body[data-t="dark"], body {
 }
 
 .hashem-btn-primary {
-  background: var(--ac);
-  color: var(--ac-on);
-  border-color: transparent;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--ac) 22%, transparent);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--ac) 88%, #ffffff 12%), var(--ac));
+  color:var(--ac-on);
+  border-color:transparent;
+  box-shadow:0 2px 12px color-mix(in srgb, var(--ac) 35%, transparent), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .hashem-btn-primary:hover {
-  background: var(--ac-hover);
+  background:var(--ac-hover);
+  transform:translateY(-1px);
+  box-shadow:0 4px 18px color-mix(in srgb, var(--ac) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.18);
 }
+.hashem-btn-primary:active { transform:translateY(0); }
 
 .hashem-btn-secondary {
-  background: var(--s2);
-  color: var(--tx2);
-  border: 1px solid var(--ln2);
+  background:var(--s2);
+  color:var(--tx2);
+  border:1px solid var(--ln2);
+  box-shadow:var(--lift-sm);
 }
 .hashem-btn-secondary:hover {
-  background: var(--s3);
-  color: var(--tx);
+  background:var(--s3);
+  color:var(--tx);
+  border-color:color-mix(in srgb, var(--ac) 35%, var(--ln2));
+  transform:translateY(-1px);
 }
+.hashem-btn-secondary:active { transform:translateY(0); }
 
 .hashem-btn-danger {
   background: color-mix(in srgb, var(--er) 10%, transparent);
@@ -242,23 +265,24 @@ body[data-t="dark"], body {
 
 /* Form Controls */
 .hashem-input, .hashem-select {
-  height: var(--ctl-h);
-  width: 100%;
-  padding: 0 var(--ctl-px);
-  background: var(--field);
-  border: 1px solid var(--ln);
-  border-radius: var(--ctl-r);
-  font-size: var(--ctl-fs);
-  color: var(--tx2);
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  height:var(--ctl-h);
+  width:100%;
+  padding:0 var(--ctl-px);
+  background:var(--field);
+  border:1px solid var(--ln);
+  border-radius:var(--ctl-r);
+  font-size:var(--ctl-fs);
+  color:var(--tx2);
+  outline:none;
+  transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
 .hashem-input::placeholder {
-  color: var(--dim);
+  color:var(--dim);
 }
+.hashem-input:hover { border-color:var(--ln2); }
 .hashem-input:focus, .hashem-select:focus {
-  border-color: var(--ac);
-  box-shadow: 0 0 0 1px var(--ac);
+  border-color:var(--ac);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--ac) 18%, transparent);
 }
 
 /* Quick Create & Action Buttons in Sidebar */

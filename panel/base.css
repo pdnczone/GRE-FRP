@@ -1,8 +1,4 @@
-/* Shared utilities: the section label, the mono figure, the icon size.
- * Ported verbatim from the approved preview — the design that was signed
- * off, not a re-drawing of it. Class names are kept so the markup matches.
- */
-
+/* Shared utilities: the section label, the mono figure, the icon size. */
   /* Typography scale defaults — normalized rem-based scale */
   h1 { font-size: var(--fs-h1); line-height: var(--lh-h1); font-weight: var(--fw-h1); color: var(--tx); letter-spacing: -0.025em; }
   h2 { font-size: var(--fs-h2); line-height: var(--lh-h2); font-weight: var(--fw-h2); color: var(--tx); letter-spacing: -0.02em; }
@@ -14,6 +10,21 @@
   .wrapg{max-width:1300px;margin:0 auto;padding:var(--sp-5) clamp(var(--sp-4),3vw,var(--sp-6)) 72px}
   #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(336px,1fr));gap:var(--sp-4)}
   .mono{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+  /* Status badge — one component for Online/Offline/Up/Down pills */
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+    font-size:var(--fs-small);font-weight:600;line-height:1.6;border:1px solid transparent;white-space:nowrap}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;margin:0;flex:none}
+  .badge.ok{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+  .badge.ok .dot{box-shadow:0 0 6px color-mix(in srgb,var(--ok) 70%,transparent)}
+  .badge.err{background:var(--er-soft);color:var(--er);border-color:color-mix(in srgb,var(--er) 30%,transparent)}
+  .badge.warn{background:var(--wr-soft);color:var(--wr);border-color:color-mix(in srgb,var(--wr) 35%,transparent)}
+  .badge.info{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 30%,transparent)}
+  .badge.dim{background:var(--sunk);color:var(--dim);border-color:var(--ln)}
+
+  /* Card section title */
+  .card-title{font-size:var(--fs-h4);font-weight:600;color:var(--tx);margin:0;letter-spacing:-.01em}
+
   .k{display:block;width:100%}
   .iA{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}
   .sparkpath{stroke-dasharray:700;stroke-dashoffset:700;animation:draw 1.6s var(--spring) forwards}
