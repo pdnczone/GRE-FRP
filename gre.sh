@@ -187,7 +187,7 @@ After=network.target
 Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=-/sbin/ip tunnel del ${TUNNEL_NAME}
-ExecStart=/bin/sh -c "/sbin/ip tunnel add ${TUNNEL_NAME} mode gre local ${LOCAL_IP} remote ${REMOTE_IP} ttl 255 && /sbin/ip link set dev ${TUNNEL_NAME} up mtu 1476 && /sbin/ip addr add ${GRE_INTERNAL_IP}/30 dev ${TUNNEL_NAME}"
+ExecStart=/bin/sh -c "/sbin/ip tunnel add ${TUNNEL_NAME} mode gre local ${LOCAL_IP} remote ${REMOTE_IP} ttl 255 && /sbin/ip link set dev ${TUNNEL_NAME} up mtu 1448 && /sbin/ip addr add ${GRE_INTERNAL_IP}/30 dev ${TUNNEL_NAME}"
 ExecStop=-/sbin/ip tunnel del ${TUNNEL_NAME}
 
 [Install]
@@ -566,9 +566,10 @@ tune_apply() {
     sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
     echo -e "${GREEN}[✔️] IPv4 forwarding → on${NC}"
 
-    # 5. GRE MTU to tunnel-safe 1400 (avoids fragmentation over GRE+FRP)
+    # 5. GRE MTU 1448 (1500 outer − 24 GRE − 28 IP/ICMP headroom:
+    # full-size packets pass unfragmented, verified by MTU probe)
     if ip link show "$TUNNEL_NAME" >/dev/null 2>&1; then
-        ip link set dev "$TUNNEL_NAME" mtu 1400 >/dev/null 2>&1 && echo -e "${GREEN}[✔️] ${TUNNEL_NAME} MTU → 1400${NC}" || echo -e "${YELLOW}[!] Could not set GRE MTU.${NC}"
+        ip link set dev "$TUNNEL_NAME" mtu 1448 >/dev/null 2>&1 && echo -e "${GREEN}[✔️] ${TUNNEL_NAME} MTU → 1448${NC}" || echo -e "${YELLOW}[!] Could not set GRE MTU.${NC}"
     else
         echo -e "${YELLOW}[*] No ${TUNNEL_NAME} interface yet — MTU will apply on next setup.${NC}"
     fi
