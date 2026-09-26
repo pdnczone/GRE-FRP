@@ -579,50 +579,58 @@ function drawChart(hist) {
   ctx.textAlign = 'right'; ctx.fillText(fmtT(pts[pts.length-1].t), W - padR, H - 6);
 }
 async function refreshDash() {
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  const setHTML = (id, v) => { const el = $(id); if (el) el.innerHTML = v; };
+  const setBar = (id, pct) => { const el = $(id); if (el) el.style.width = pct; };
   try {
     const d = await api('/api/dashboard?range=' + dashRange);
+    if (!d || typeof d !== 'object') return;
     const on = !!d.online;
-    $('kpiStatus').textContent = on ? 'Online' : 'Offline';
-    $('kpiStatus').style.color = on ? 'var(--ok)' : 'var(--er)';
-    $('kpiStatusSub').textContent = (d.role || 'unknown role') + ' · ' + (d.checked ? 'checked ' + d.checked.slice(11, 19) + ' UTC' : '');
+    set('kpiStatus', on ? 'Online' : 'Offline');
+    const kpiStatus = $('kpiStatus'); if (kpiStatus) kpiStatus.style.color = on ? 'var(--ok)' : 'var(--er)';
+    set('kpiStatusSub', (d.role || 'unknown role') + ' · ' + (d.checked ? 'checked ' + String(d.checked).slice(11, 19) + ' UTC' : ''));
     const g = d.gre || {}, f = d.frp || {};
     const greUp = !!g.exists, frpUp = !!f.up;
-    $('kpiLinks').textContent = (greUp ? 'GRE ●' : 'GRE ○') + '  ' + (frpUp ? 'FRP ●' : 'FRP ○');
-    $('kpiLinks').style.color = (greUp && frpUp) ? 'var(--ok)' : (greUp || frpUp) ? 'var(--wr)' : 'var(--er)';
-    $('kpiLinksSub').textContent = (f.svc || 'no frp') + ((f.proxies || []).length ? ' · ' + f.proxies.length + ' proxies' : '') + ' · ' + (g.inner || 'no gre ip');
+    set('kpiLinks', (greUp ? 'GRE ●' : 'GRE ○') + '  ' + (frpUp ? 'FRP ●' : 'FRP ○'));
+    const kpiLinks = $('kpiLinks'); if (kpiLinks) kpiLinks.style.color = (greUp && frpUp) ? 'var(--ok)' : (greUp || frpUp) ? 'var(--wr)' : 'var(--er)';
+    set('kpiLinksSub', (f.svc || 'no frp') + ((f.proxies || []).length ? ' · ' + f.proxies.length + ' proxies' : '') + ' · ' + (g.inner || 'no gre ip'));
     const ms = d.ping_ok && d.ping ? parseFloat(d.ping) : null;
-    $('kpiPing').textContent = d.ping_ok && d.ping ? d.ping : NA;
-    $('kpiPingSub').textContent = ms == null ? 'no answer' : ms < 80 ? 'Optimal' : ms < 200 ? 'Good' : 'High';
-    $('kpiPingSub').innerHTML = ms == null ? 'no answer' : ms < 80 ? '<span class="pos">● Optimal</span>' : ms < 200 ? '<span class="pos">● Good</span>' : '<span class="neg">● High</span>';
+    set('kpiPing', d.ping_ok && d.ping ? d.ping : NA);
+    setHTML('kpiPingSub', ms == null ? 'no answer' : ms < 80 ? '<span class="pos">● Optimal</span>' : ms < 200 ? '<span class="pos">● Good</span>' : '<span class="neg">● High</span>');
     const t = d.traffic || {};
-    $('kpiTraffic').textContent = fmtBytes(t.total);
-    $('kpiTrafficSub').textContent = '↑ ' + fmtBytes(t.up) + '  ·  ↓ ' + fmtBytes(t.down);
+    set('kpiTraffic', fmtBytes(t.total));
+    set('kpiTrafficSub', '↑ ' + fmtBytes(t.up) + '  ·  ↓ ' + fmtBytes(t.down));
     drawChart(d.history);
     const w = $('tunnelWarn');
-    if (!on) { w.innerHTML = '⚠️ <b>Tunnel is not running.</b> Go to Setup to configure GRE + FRP, or check the Tunnel tab.'; w.classList.remove('hidden'); }
-    else w.classList.add('hidden');
+    if (w) {
+      if (!on) { w.innerHTML = '⚠️ <b>Tunnel is not running.</b> Go to Setup to configure GRE + FRP, or check the Tunnel tab.'; w.classList.remove('hidden'); }
+      else w.classList.add('hidden');
+    }
     const s = d.system || {};
-    const cpu = s.cpu_pct != null ? parseFloat(s.cpu_pct) : null;
-    $('kpiCpu').textContent = cpu != null ? cpu.toFixed(1) + '%' : NA;
-    $('kpiCpuSub').textContent = 'load ' + (s.load || NA) + ' · ' + (s.cores || '?') + ' cores';
-    $('cpuBar').style.width = (cpu != null ? Math.min(100, cpu) : 0) + '%';
+    let cpu = s.cpu_pct != null ? parseFloat(s.cpu_pct) : null;
+    if (cpu != null && !isFinite(cpu)) cpu = null;
+    set('kpiCpu', cpu != null ? cpu.toFixed(1) + '%' : '…');
+    set('kpiCpuSub', 'load ' + (s.load || NA) + ' · ' + (s.cores || '?') + ' cores');
+    setBar('cpuBar', (cpu != null ? Math.min(100, Math.max(0, cpu)) : 0) + '%');
     const m = s.mem || {};
-    const memp = m.pct != null ? parseFloat(m.pct) : null;
-    $('kpiRam').textContent = memp != null ? memp.toFixed(1) + '%' : NA;
-    $('kpiRamSub').textContent = m.used != null ? fmtBytes(m.used) + ' / ' + fmtBytes(m.total) : '—';
-    $('ramBar').style.width = (memp != null ? Math.min(100, memp) : 0) + '%';
-    const dp = s.disk_pct != null ? parseFloat(s.disk_pct) : null;
-    $('kpiDisk').textContent = dp != null ? dp.toFixed(1) + '%' : NA;
-    $('kpiDiskSub').textContent = 'root partition';
-    $('diskBar').style.width = (dp != null ? Math.min(100, dp) : 0) + '%';
+    let memp = m.pct != null ? parseFloat(m.pct) : null;
+    if (memp != null && !isFinite(memp)) memp = null;
+    set('kpiRam', memp != null ? memp.toFixed(1) + '%' : '…');
+    set('kpiRamSub', m.used != null ? fmtBytes(m.used) + ' / ' + fmtBytes(m.total) : '—');
+    setBar('ramBar', (memp != null ? Math.min(100, Math.max(0, memp)) : 0) + '%');
+    let dp = s.disk_pct != null ? parseFloat(s.disk_pct) : null;
+    if (dp != null && !isFinite(dp)) dp = null;
+    set('kpiDisk', dp != null ? dp.toFixed(1) + '%' : '…');
+    set('kpiDiskSub', 'root partition');
+    setBar('diskBar', (dp != null ? Math.min(100, Math.max(0, dp)) : 0) + '%');
     const u = d.uptime || {};
-    $('kpiUp').textContent = fmtSecs(u.system);
-    $('kpiUpSub').textContent = 'panel ' + fmtSecs(u.panel) + ' · ' + (d.conns != null ? d.conns + ' conns' : 'conns N/A');
-    $('dashDetails').innerHTML = dr('Public IP', d.local_pub) + dr('GRE local', g.local) + dr('GRE peer', g.peer)
+    set('kpiUp', fmtSecs(u.system));
+    set('kpiUpSub', 'panel ' + fmtSecs(u.panel) + ' · ' + (d.conns != null ? d.conns + ' conns' : 'conns N/A'));
+    setHTML('dashDetails', dr('Public IP', d.local_pub) + dr('GRE local', g.local) + dr('GRE peer', g.peer)
       + dr('GRE inner', g.inner) + dr('FRP service', f.up ? f.svc : 'down') + dr('FRP port', f.port)
       + dr('Proxies', (f.proxies || []).join(', ') || '—') + dr('Role', d.role)
-      + (u.frp_since ? dr('FRP since', u.frp_since) : '');
-    $('dashChecked').textContent = 'last check: ' + (d.checked || '—');
+      + (u.frp_since ? dr('FRP since', u.frp_since) : ''));
+    set('dashChecked', 'last check: ' + (d.checked || '—'));
   } catch(e) { /* keep old values; N/A already default */ }
 }
 // ---- setup form ----
