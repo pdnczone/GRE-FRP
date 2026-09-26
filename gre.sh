@@ -409,8 +409,13 @@ install_panel() {
     LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/GRE-FRP/releases/latest" 2>/dev/null) || true
     if [[ -n "$LATEST_JSON" ]]; then
         DL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*${PANEL_ASSET}\"" | head -1 | cut -d'"' -f4)
-        if [[ -n "$DL_URL" ]] && curl -fsSL --max-time 60 "$DL_URL" -o "$TMP_PANEL/gre-panel"; then
-            DL_OK=1
+        if [[ -n "$DL_URL" ]] && curl -fsSL --max-time 90 -L "$DL_URL" -o "$TMP_PANEL/gre-panel" && [[ -s "$TMP_PANEL/gre-panel" ]]; then
+            if head -c 4 "$TMP_PANEL/gre-panel" | grep -q "ELF"; then
+                DL_OK=1
+                echo -e "${GREEN}[✔️] Downloaded prebuilt panel ($(du -h "$TMP_PANEL/gre-panel" | cut -f1)).${NC}"
+            else
+                echo -e "${YELLOW}[!] Downloaded file is not a binary — falling back to source build.${NC}"
+            fi
         fi
         GREPANEL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*grepanel\"" | head -1 | cut -d'"' -f4)
         if [[ -n "$GREPANEL_URL" ]]; then
