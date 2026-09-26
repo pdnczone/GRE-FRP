@@ -390,6 +390,32 @@ uninstall_all() {
     fi
 }
 
+remove_tunnel() {
+    echo -e "\n${RED}=== Removing GRE + FRP Tunnel (panel stays) ===${NC}"
+    read -p "Remove the tunnel from THIS server? Panel stays installed. (y/N): " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+        # Stop & disable services
+        systemctl stop frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
+        systemctl disable frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
+
+        # Remove systemd files
+        rm -f /etc/systemd/system/frps.service /etc/systemd/system/frpc.service /etc/systemd/system/${TUNNEL_NAME}.service
+        systemctl daemon-reload
+        systemctl reset-failed >/dev/null 2>&1 || true
+
+        # Remove GRE interface
+        ip tunnel del "$TUNNEL_NAME" >/dev/null 2>&1 || true
+
+        # Remove binaries & configs (panel untouched)
+        rm -f "${INSTALL_DIR}/frps" "${INSTALL_DIR}/frpc"
+        rm -rf "$CONFIG_DIR"
+
+        echo -e "${GREEN}[✔️] Tunnel removed — GRE interface, FRP services, binaries and configs gone. Panel still running.${NC}"
+    else
+        echo -e "${YELLOW}[*] Aborted.${NC}"
+    fi
+}
+
 PANEL_DIR="/usr/local/gre-panel"
 PANEL_BIN="/usr/local/bin/gre-panel"
 
@@ -580,9 +606,10 @@ main_menu() {
     echo "6) Uninstall Everything (GRE + FRP)"
     echo "7) Update All (latest script + latest panel binary)"
     echo "8) Show Panel URL + Username + Password"
+    echo "9) Remove Tunnel (GRE + FRP, panel stays)"
     echo "0) Exit"
     echo ""
-    read -p "Select an option [0-8]: " OPTION
+    read -p "Select an option [0-9]: " OPTION
 
     case "$OPTION" in
         1)
@@ -608,6 +635,9 @@ main_menu() {
             ;;
         8)
             show_panel_url
+            ;;
+        9)
+            remove_tunnel
             ;;
         0)
             echo "Exiting..."

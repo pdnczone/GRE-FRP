@@ -246,6 +246,7 @@
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-gre">Restart GRE</button>
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-frps">Restart frps</button>
             <button class="hashem-btn hashem-btn-secondary" data-act="restart-frpc">Restart frpc</button>
+            <button class="hashem-btn hashem-btn-danger" id="removeTunnelBtn">Remove tunnel</button>
           </div>
           <pre id="actOut" class="logs hidden" style="margin-top:4px"></pre>
         </div>
@@ -577,6 +578,19 @@ $('toggle').addEventListener('click', () => {
 })();
 $('logoutBtn').onclick = async () => { try { await api('/api/logout', {}); } catch(e){} showLogin(); };
 $('refreshBtn').onclick = refresh;
+$('removeTunnelBtn').onclick = async () => {
+  if (!confirm('Remove the tunnel from THIS server? GRE + FRP will be deleted; the panel stays.')) return;
+  const b = $('removeTunnelBtn');
+  b.disabled = true;
+  try {
+    const r = await api('/api/action', {action: 'remove-tunnel'});
+    $('actOut').classList.remove('hidden');
+    $('actOut').textContent = r.output || 'tunnel removed';
+    toast('tunnel removed');
+    refresh();
+  } catch(e) { toast(e.message); }
+  b.disabled = false;
+};
 document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
   b.disabled = true;
   try {

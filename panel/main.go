@@ -273,7 +273,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.Action {
-	case "restart-frps", "restart-frpc", "restart-gre", "ping":
+	case "restart-frps", "restart-frpc", "restart-gre", "ping", "remove-tunnel":
 		out, err := runAction(body.Action)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -303,6 +303,35 @@ func runAction(action string) (string, error) {
 		}
 		out, err := exec.Command("ping", "-c", "3", "-W", "2", st.GrePeer).CombinedOutput()
 		return string(out), err
+	case "remove-tunnel":
+		// mirror of gre.sh remove_tunnel(): GRE + FRP gone, panel untouched.
+		var outs []string
+		run := func(name string, args ...string) {
+			out, _ := exec.Command(name, args...).CombinedOutput()
+			o := strings.TrimSpace(string(out))
+			if o == "" {
+				o = "ok"
+			}
+			outs = append(outs, fmt.Sprintf("$ %s %s → %s", name, strings.Join(args, " "), o))
+		}
+		run("systemctl", "stop", "frps", "frpc", "gre-tunnel.service")
+		run("systemctl", "disable", "frps", "frpc", "gre-tunnel.service")
+		for _, f := range []string{
+			"/etc/systemd/system/frps.service",
+			"/etc/systemd/system/frpc.service",
+			"/etc/systemd/system/gre-tunnel.service",
+		} {
+			_ = os.Remove(f)
+		}
+		run("systemctl", "daemon-reload")
+		run("systemctl", "reset-failed")
+		run("ip", "tunnel", "del", "gre-tunnel")
+		for _, f := range []string{"/usr/local/bin/frps", "/usr/local/bin/frpc"} {
+			_ = os.Remove(f)
+		}
+		_ = os.RemoveAll(frpConfigDir)
+		outs = append(outs, "tunnel removed — panel still running")
+		return strings.Join(outs, "\n"), nil
 	}
 	return "", fmt.Errorf("unknown action")
 }
