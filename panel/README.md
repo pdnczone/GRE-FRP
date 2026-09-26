@@ -19,7 +19,7 @@ configures only its own side, and shows the other side via Peer link.
 ## One-line install (recommended)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pdnczone/hashem/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/pdnczone/hashem-panel/main/install.sh)
 ```
 
 Then pick **7) Install Web Panel** — it builds the Go binary, installs the

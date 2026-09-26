@@ -651,7 +651,7 @@ install_panel() {
     TMP_PANEL="$(mktemp -d)"
     DL_OK=0
     # try latest release first (prebuilt, no Go needed)
-    LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/hashem/releases/latest" 2>/dev/null) || true
+    LATEST_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/pdnczone/hashem-panel/releases/latest" 2>/dev/null) || true
     if [[ -n "$LATEST_JSON" ]]; then
         DL_URL=$(echo "$LATEST_JSON" | grep -o "\"browser_download_url\": *\"[^\"]*${PANEL_ASSET}\"" | head -1 | cut -d'"' -f4)
         if [[ -n "$DL_URL" ]] && curl -fsSL --max-time 90 -L "$DL_URL" -o "$TMP_PANEL/gre-panel" && [[ -s "$TMP_PANEL/gre-panel" ]]; then
@@ -680,7 +680,7 @@ install_panel() {
             apt-get update -qq
             apt-get install -y -qq golang-go
         fi
-        if ! curl -fsSL "https://github.com/pdnczone/hashem/archive/refs/heads/main.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
+        if ! curl -fsSL "https://github.com/pdnczone/hashem-panel/archive/refs/heads/main.tar.gz" -o "$TMP_PANEL/panel.tgz"; then
             echo -e "${RED}[!] Failed to download panel sources.${NC}"
             rm -rf "$TMP_PANEL"
             return 1
@@ -798,7 +798,7 @@ update_all() {
     TMP_U="$(mktemp -d)"
     trap 'rm -rf "$TMP_U"' RETURN
     # 1. fresh script from main
-    if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/hashem/main/gre.sh" -o "$TMP_U/gre.sh"; then
+    if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/hashem-panel/main/gre.sh" -o "$TMP_U/gre.sh"; then
         echo -e "${RED}[!] Failed to download latest gre.sh — nothing changed.${NC}"
         return 1
     fi
