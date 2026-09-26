@@ -26,7 +26,6 @@ const (
 	defaultIranGRE    = "10.10.10.2"
 	defaultForeignGRE = "10.10.10.1"
 	defaultFrpPort    = 7000
-	frpVersion        = "0.71.0" // fallback only; gre.sh prefers latest
 )
 
 // ---- gre.sh location ----

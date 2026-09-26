@@ -1,9 +1,12 @@
 package main
 
+// Entry point: config load, route table, static assets.
+// Auth lives in auth.go, tunnel status/actions in tunnel.go,
+// setup in setup.go, dashboard metrics in dashboard.go.
+
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -11,11 +14,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 )
 
 //go:embed index.html tokens.css base.css favicon.png
@@ -30,11 +30,7 @@ type panelConfig struct {
 	BasePath string `json:"base_path"`
 }
 
-var (
-	cfg   panelConfig
-	mu    sync.Mutex
-	nonce [32]byte
-)
+var cfg panelConfig
 
 func cfgPath() string { return filepath.Join(configDir, "panel.json") }
 
@@ -123,91 +119,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-// ---- auth (cookie + csrf, inspired by hashem webui) ----
-
-func sessionCookie(value string, maxAge int) *http.Cookie {
-	return &http.Cookie{
-		Name:     "gre_session",
-		Value:    value,
-		Path:     "/" + cfg.BasePath + "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   maxAge,
-	}
-}
-
-func authed(r *http.Request) bool {
-	c, err := r.Cookie("gre_session")
-	if err != nil || c.Value == "" {
-		return false
-	}
-	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
-	want := hex.EncodeToString(mac[:])
-	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(want)) == 1
-}
-
-func requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !authed(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
-func handleLogin(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	h := sha256.Sum256([]byte(body.Password))
-	got := hex.EncodeToString(h[:])
-	if subtle.ConstantTimeCompare([]byte(body.Username), []byte(cfg.Username)) != 1 ||
-		subtle.ConstantTimeCompare([]byte(got), []byte(cfg.PassHash)) != 1 {
-		http.Error(w, "wrong username or password", http.StatusUnauthorized)
-		return
-	}
-	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
-	http.SetCookie(w, sessionCookie(hex.EncodeToString(mac[:]), 86400*7))
-	writeJSON(w, map[string]string{"status": "ok"})
-}
-
-func handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, sessionCookie("", -1))
-	writeJSON(w, map[string]string{"status": "ok"})
-}
-
-func handlePassword(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Password) < 4 {
-		http.Error(w, "password must be at least 4 characters", http.StatusBadRequest)
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	h := sha256.Sum256([]byte(body.Password))
-	cfg.PassHash = hex.EncodeToString(h[:])
-	_ = os.WriteFile(cfgPath(), mustJSON(cfg), 0600)
-	// keep plaintext copy in sync (user choice: viewable via script menu)
-	_ = os.WriteFile(filepath.Join(configDir, "panel.pass"), []byte(body.Password), 0600)
-	if _, err := rand.Read(nonce[:]); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
-	http.SetCookie(w, sessionCookie(hex.EncodeToString(mac[:]), 86400*7))
-	writeJSON(w, map[string]string{"status": "ok"})
-}
-
-// ---- pages & api ----
-
 func serveAsset(name, ctype string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := panelFS.ReadFile(name)
@@ -235,232 +146,4 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// status of GRE + FRP on this machine.
-func handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"local": localStatus()})
-}
-
-func handleLogs(w http.ResponseWriter, r *http.Request) {
-	svc := r.URL.Query().Get("svc")
-	if svc != "frps" && svc != "frpc" {
-		svc = "frps"
-	}
-	if _, err := exec.LookPath("journalctl"); err == nil {
-		out, err := exec.Command("journalctl", "-u", svc, "-n", "50", "--no-pager").CombinedOutput()
-		if err == nil {
-			writeJSON(w, map[string]string{"logs": string(out)})
-			return
-		}
-	}
-	// fallback: log files
-	for _, p := range []string{"/var/log/" + svc + ".log", "/root/" + svc + ".log"} {
-		if data, err := os.ReadFile(p); err == nil {
-			writeJSON(w, map[string]string{"logs": string(data)})
-			return
-		}
-	}
-	writeJSON(w, map[string]string{"logs": "(no logs available)"})
-}
-
-// actions: restart frps/frpc/gre, ping peer.
-func handleAction(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Action string `json:"action"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	switch body.Action {
-	case "restart-frps", "restart-frpc", "restart-gre", "ping", "remove-tunnel":
-		out, err := runAction(body.Action)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, map[string]string{"status": "ok", "output": out})
-	default:
-		http.Error(w, "unknown action", http.StatusBadRequest)
-	}
-}
-
-func runAction(action string) (string, error) {
-	switch action {
-	case "restart-frps":
-		out, err := exec.Command("systemctl", "restart", "frps").CombinedOutput()
-		return string(out), err
-	case "restart-frpc":
-		out, err := exec.Command("systemctl", "restart", "frpc").CombinedOutput()
-		return string(out), err
-	case "restart-gre":
-		out, err := exec.Command("systemctl", "restart", "gre-tunnel.service").CombinedOutput()
-		return string(out), err
-	case "ping":
-		st := localStatus()
-		if st.GrePeer == "" {
-			return "", fmt.Errorf("no GRE peer known")
-		}
-		out, err := exec.Command("ping", "-c", "3", "-W", "2", st.GrePeer).CombinedOutput()
-		return string(out), err
-	case "remove-tunnel":
-		// mirror of gre.sh remove_tunnel_force(): GRE + FRP gone, panel untouched.
-		// Implemented via the installer itself (single source of truth) so the
-		// shell-out path and the menu path can never drift apart.
-		out, err := removeViaInstaller()
-		if err != nil {
-			return "", err
-		}
-		return out, nil
-	}
-	return "", fmt.Errorf("unknown action")
-}
-
-// removeViaInstaller runs `gre.sh remove-tunnel --force` and returns its
-// output as the action result. GRE_SKIP_PANEL is irrelevant here (removal
-// never touches the panel), but kept for symmetry with runInstaller.
-func removeViaInstaller() (string, error) {
-	script, err := greScriptPath()
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.Command("bash", script, "remove-tunnel", "--force")
-	cmd.Env = append(os.Environ(), "GRE_SKIP_PANEL=1")
-	out, runErr := cmd.CombinedOutput()
-	o := strings.TrimSpace(string(out))
-	if o == "" {
-		o = "tunnel removed — panel still running"
-	}
-	if runErr != nil {
-		return o, fmt.Errorf("remove-tunnel failed: %w", runErr)
-	}
-	return o, nil
-}
-
-// ---- local inspection (reads systemd + ip, never writes except via actions) ----
-
-type greState struct {
-	Exists bool   `json:"exists"`
-	Name   string `json:"name"`
-	Local  string `json:"local"`
-	PeerIP string `json:"peer_ip"`
-	Inner  string `json:"inner"`
-}
-
-type tunnelStatus struct {
-	Role     string   `json:"role"`
-	Gre      greState `json:"gre"`
-	GrePeer  string   `json:"gre_peer"`
-	PingOK   bool     `json:"ping_ok"`
-	PingMs   string   `json:"ping_ms"`
-	FrpUp    bool     `json:"frp_up"`
-	FrpSvc   string   `json:"frp_svc"`
-	FrpPort  int      `json:"frp_port"`
-	Proxies  []string `json:"proxies"`
-	BindPort int      `json:"bind_port"`
-}
-
-func localStatus() tunnelStatus {
-	var st tunnelStatus
-	// GRE interface
-	if out, err := exec.Command("ip", "tunnel", "show").CombinedOutput(); err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
-			if strings.Contains(line, "gre-tunnel") {
-				st.Gre.Exists = true
-				st.Gre.Name = "gre-tunnel"
-				parts := strings.Fields(line)
-				for i, p := range parts {
-					if p == "local" && i+1 < len(parts) {
-						st.Gre.Local = parts[i+1]
-					}
-					if p == "remote" && i+1 < len(parts) {
-						st.Gre.PeerIP = parts[i+1]
-						st.GrePeer = parts[i+1]
-					}
-				}
-			}
-		}
-	}
-	if out, err := exec.Command("ip", "-4", "addr", "show", "dev", "gre-tunnel").CombinedOutput(); err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "inet ") {
-				st.Gre.Inner = strings.Fields(line)[1]
-			}
-		}
-	}
-	// FRP role: which unit file exists / is active
-	for _, svc := range []string{"frps", "frpc"} {
-		if out, err := exec.Command("systemctl", "is-active", svc).CombinedOutput(); err == nil &&
-			strings.TrimSpace(string(out)) == "active" {
-			st.FrpUp = true
-			st.FrpSvc = svc
-			if svc == "frps" {
-				st.Role = "iran (server)"
-			} else {
-				st.Role = "foreign (client)"
-			}
-			break
-		}
-	}
-	if st.Role == "" {
-		// fall back to config presence
-		if _, err := os.Stat("/etc/frp/frps.toml"); err == nil {
-			st.Role = "iran (server)"
-			st.FrpSvc = "frps"
-		} else if _, err := os.Stat("/etc/frp/frpc.toml"); err == nil {
-			st.Role = "foreign (client)"
-			st.FrpSvc = "frpc"
-		}
-	}
-	// ports & proxies from toml
-	tomlPath := "/etc/frp/frps.toml"
-	if st.FrpSvc == "frpc" {
-		tomlPath = "/etc/frp/frpc.toml"
-	}
-	if data, err := os.ReadFile(tomlPath); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "bindPort") || strings.HasPrefix(line, "serverPort") {
-				var v int
-				fmt.Sscanf(line, "%*s = %d", &v)
-				st.BindPort = v
-				st.FrpPort = v
-			}
-			if strings.HasPrefix(line, "name = ") {
-				name := strings.Trim(strings.TrimPrefix(line, "name = "), `"`)
-				st.Proxies = append(st.Proxies, name)
-			}
-		}
-	}
-	// quick ping to GRE peer inner ip
-	if st.Gre.Inner != "" {
-		target := grePeerInner(st.Gre.Inner)
-		if target != "" {
-			start := time.Now()
-			if err := exec.Command("ping", "-c", "1", "-W", "2", target).Run(); err == nil {
-				st.PingOK = true
-				st.PingMs = fmt.Sprintf("%.0fms", float64(time.Since(start).Microseconds())/1000)
-			}
-		}
-	}
-	return st
-}
-
-// grePeerInner flips the last bit of a /30 inner address.
-func grePeerInner(cidr string) string {
-	ip := strings.Split(cidr, "/")[0]
-	parts := strings.Split(ip, ".")
-	if len(parts) != 4 {
-		return ""
-	}
-	last := 0
-	fmt.Sscanf(parts[3], "%d", &last)
-	if last%2 == 0 {
-		last--
-	} else {
-		last++
-	}
-	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], last)
 }
