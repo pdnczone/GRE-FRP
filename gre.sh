@@ -471,10 +471,13 @@ EOF
     sleep 2
 
     if systemctl is-active --quiet gre-panel; then
-        # capture the fresh password from the log so option 8 can show it later
+        # fresh password is in the log; save it so option 8 can show it
         NEWPASS=$(journalctl -u gre-panel -n 5 --no-pager 2>/dev/null | grep -o 'panel password: [0-9]*' | tail -1 | awk '{print $3}')
         [[ -n "$NEWPASS" ]] && save_panel_pass "$NEWPASS"
         echo -e "${GREEN}[✔️] Panel installed and running.${NC}"
+        # full credentials right here — no need to open another menu
+        echo ""
+        echo -e "${CYAN}=== Panel credentials ===${NC}"
         show_panel_url
     else
         echo -e "${RED}[!] Panel failed to start — see: journalctl -u gre-panel${NC}"
@@ -483,21 +486,50 @@ EOF
 }
 
 show_panel_url() {
-    local port base user pass
-    port=$(grep -o '"port": [0-9]*' /etc/gre-panel/panel.json 2>/dev/null | grep -o '[0-9]*')
-    base=$(grep -o '"base_path": "[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
-    user=$(grep -o '"username": "[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
+    if [[ ! -f /etc/gre-panel/panel.json ]]; then
+        echo -e "${YELLOW}Panel is not installed on this server (no /etc/gre-panel/panel.json). Run Setup first.${NC}"
+        return 1
+    fi
+    local port base user
+    port=$(grep -o '"port": *[0-9]*' /etc/gre-panel/panel.json 2>/dev/null | grep -o '[0-9]*')
+    base=$(grep -o '"base_path": *"[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
+    user=$(grep -o '"username": *"[^"]*"' /etc/gre-panel/panel.json 2>/dev/null | cut -d'"' -f4)
     port=${port:-7777}
     user=${user:-admin}
-    pass=$(cat /etc/gre-panel/panel.pass 2>/dev/null)
+    ensure_panel_pass
     MYIP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
     echo -e "${GREEN}Panel URL:  ${CYAN}http://${MYIP:-<this-server-ip>}:${port}/${base}${NC}"
     echo -e "${GREEN}Username:   ${CYAN}${user}${NC}"
-    if [[ -n "$pass" ]]; then
-        echo -e "${GREEN}Password:   ${CYAN}${pass}${NC}"
-    else
-        echo -e "${YELLOW}Password:   (not saved — use: grep 'panel password' from install log, or reset via web Settings)${NC}"
+    echo -e "${GREEN}Password:   ${CYAN}${PANEL_PASS}${NC}"
+}
+
+# make sure a plaintext password exists and load it into $PANEL_PASS.
+# fresh installs already have it (binary writes it); old installs get a new one.
+ensure_panel_pass() {
+    PANEL_PASS=$(cat /etc/gre-panel/panel.pass 2>/dev/null)
+    if [[ -n "$PANEL_PASS" ]]; then return 0; fi
+    echo -e "${YELLOW}[*] No saved panel password — generating a new one...${NC}"
+    local NEWPASS HASH
+    NEWPASS=$(tr -dc '0-9' </dev/urandom | head -c 8)
+    HASH=$(echo -n "$NEWPASS" | sha256sum | awk '{print $1}')
+    if [[ -z "$HASH" ]] || ! command -v python3 >/dev/null 2>&1; then
+        echo -e "${RED}[!] Cannot reset password (need sha256sum + python3). Change it from web Settings instead.${NC}"
+        PANEL_PASS="(unknown — reset via web Settings)"
+        return 1
     fi
+    python3 - "$HASH" <<'PYEOF'
+import json, sys
+p = '/etc/gre-panel/panel.json'
+d = json.load(open(p))
+d['pass_hash'] = sys.argv[1]
+json.dump(d, open(p, 'w'), indent=2)
+PYEOF
+    echo -n "$NEWPASS" > /etc/gre-panel/panel.pass
+    chmod 600 /etc/gre-panel/panel.pass
+    systemctl restart gre-panel 2>/dev/null
+    sleep 2
+    PANEL_PASS="$NEWPASS"
+    return 0
 }
 
 # save plaintext panel password next to config (user chose convenience over max security)
