@@ -92,6 +92,7 @@ grepanel status | logs | restart | url | password | uninstall
 | 6 | Uninstall everything (services + interface + binaries) |
 | 7 | Update all (latest script + latest prebuilt panel) |
 | 8 | Show panel URL + username + password |
+| 9 | Remove tunnel (GRE + FRP gone, **panel stays**) |
 | 0 | Exit |
 
 ---
