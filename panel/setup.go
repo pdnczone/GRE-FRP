@@ -1,9 +1,13 @@
 package main
 
-// Setup API: build the GRE+FRP tunnel from the web panel.
-// Each panel configures ONLY its own side (per user decision).
-// Iran side: GRE + frps (token auto-generated, shown for copy to Turkey).
-// Foreign side: GRE + frpc (token entered manually, ports list like "443, 2083").
+// Setup API: validate the web form, then run the SAME gre.sh install
+// functions the CLI/menu use (single source of truth). The request fields
+// map 1:1 to the setup-iran / setup-foreign CLI flags at the bottom of
+// gre.sh, and the installer script path is resolved next to the binary so it
+// works both in dev (./panel/gre.sh) and on servers (/usr/local/bin/).
+//
+// Iran side: GRE + frps (token auto-generated, shown for copy to Foreign).
+// Foreign side: GRE + frpc (token entered manually, ports like "443, 2083").
 
 import (
 	"crypto/rand"
@@ -13,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -21,8 +26,38 @@ const (
 	defaultIranGRE    = "10.10.10.2"
 	defaultForeignGRE = "10.10.10.1"
 	defaultFrpPort    = 7000
-	frpVersion        = "0.71.0"
+	frpVersion        = "0.71.0" // fallback only; gre.sh prefers latest
 )
+
+// ---- gre.sh location ----
+
+// greScriptPath finds the installer: GRE_SCRIPT env wins, else <bindir>/gre.sh
+// (servers: alongside /usr/local/bin/gre-panel), else ./gre.sh (panel/ dev).
+func greScriptPath() (string, error) {
+	if p := os.Getenv("GRE_SCRIPT"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+		return "", fmt.Errorf("GRE_SCRIPT=%s not found", p)
+	}
+	if exe, err := os.Executable(); err == nil {
+		if p := filepath.Join(filepath.Dir(exe), "gre.sh"); fileExists(p) {
+			return p, nil
+		}
+	}
+	if fileExists("gre.sh") {
+		if abs, err := filepath.Abs("gre.sh"); err == nil {
+			return abs, nil
+		}
+		return "gre.sh", nil
+	}
+	return "", fmt.Errorf("gre.sh not found (set GRE_SCRIPT=/path/to/gre.sh)")
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
 
 // ---- GET /api/setup: defaults + whether a tunnel already exists ----
 
@@ -70,15 +105,15 @@ func detectPublicIP() string {
 // ---- POST /api/setup ----
 
 type setupRequest struct {
-	Role       string `json:"role"` // "iran" | "foreign"
-	LocalPub   string `json:"local_public"`
-	RemotePub  string `json:"remote_public"`
-	LocalGre   string `json:"local_gre"`
-	PeerGre    string `json:"peer_gre"`
-	FrpPort    int    `json:"frp_port"`
-	Token      string `json:"token"` // foreign only (manual); iran ignores
-	Ports      string `json:"ports"` // foreign only, e.g. "443, 2083, 8080"
-	Force      bool   `json:"force"`
+	Role      string `json:"role"` // "iran" | "foreign"
+	LocalPub  string `json:"local_public"`
+	RemotePub string `json:"remote_public"`
+	LocalGre  string `json:"local_gre"`
+	PeerGre   string `json:"peer_gre"`
+	FrpPort   int    `json:"frp_port"`
+	Token     string `json:"token"` // foreign only (manual); iran auto-generates
+	Ports     string `json:"ports"` // foreign only, e.g. "443, 2083, 8080"
+	Force     bool   `json:"force"`
 }
 
 func handleSetupPost(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +128,7 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	body.PeerGre = strings.TrimSpace(body.PeerGre)
 	body.Token = strings.TrimSpace(body.Token)
 
-	// validation
+	// validation (mirrors gre.sh prompt_* / validate_setup_common rules)
 	if body.Role != "iran" && body.Role != "foreign" {
 		http.Error(w, "role must be iran or foreign", http.StatusBadRequest)
 		return
@@ -145,14 +180,10 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var steps []string
-	var token string
-	var err error
-	if body.Role == "iran" {
-		token, steps, err = runIranSetup(body)
-	} else {
-		steps, err = runForeignSetup(body, ports)
-	}
+	// run the shared installer: GRE_SKIP_PANEL=1 because the panel is already
+	// running here — reinstalling/downloading it mid-request would be slow and
+	// could restart this very process.
+	token, steps, err := runInstaller(body, ports)
 	if err != nil {
 		steps = append(steps, "FAILED: "+err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -164,6 +195,63 @@ func handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		out["token"] = token
 	}
 	writeJSON(w, out)
+}
+
+// runInstaller shells out to gre.sh setup-iran|setup-foreign with the same
+// flags the CLI uses, so menu / CLI / panel execute identical steps.
+// Returns the generated Iran token ("", steps, nil) for foreign.
+func runInstaller(b setupRequest, ports []int) (string, []string, error) {
+	script, err := greScriptPath()
+	if err != nil {
+		return "", nil, err
+	}
+	token := ""
+	args := []string{}
+	if b.Role == "iran" {
+		token = randomToken(16)
+		args = []string{"setup-iran",
+			"--local-pub", b.LocalPub, "--remote-pub", b.RemotePub,
+			"--frp-port", strconv.Itoa(b.FrpPort),
+			"--local-gre", b.LocalGre, "--peer-gre", b.PeerGre,
+			"--token", token,
+		}
+	} else {
+		strs := make([]string, len(ports))
+		for i, p := range ports {
+			strs[i] = strconv.Itoa(p)
+		}
+		args = []string{"setup-foreign",
+			"--local-pub", b.LocalPub, "--remote-pub", b.RemotePub,
+			"--frp-port", strconv.Itoa(b.FrpPort),
+			"--local-gre", b.LocalGre, "--peer-gre", b.PeerGre,
+			"--token", b.Token,
+			"--ports", strings.Join(strs, ","),
+		}
+	}
+	if b.Force {
+		args = append(args, "--force")
+	}
+	// token is used verbatim as an argv element (no shell), safe from injection.
+	cmd := exec.Command("bash", append([]string{script}, args...)...)
+	cmd.Env = append(os.Environ(), "GRE_SKIP_PANEL=1")
+	out, runErr := cmd.CombinedOutput()
+	steps := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			steps = append(steps, line)
+		}
+	}
+	if b.Role == "iran" {
+		steps = append([]string{"token generated (copy to Foreign side)"}, steps...)
+	}
+	if runErr != nil {
+		return "", steps, fmt.Errorf("gre.sh %s failed: %w", args[0], runErr)
+	}
+	if b.Role == "iran" {
+		return token, steps, nil
+	}
+	return "", steps, nil
 }
 
 func isV4(s string) bool {

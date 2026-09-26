@@ -21,6 +21,90 @@ IRAN_GRE_IP="10.10.10.2"
 FOREIGN_GRE_IP="10.10.10.1"
 TUNNEL_NAME="gre-tunnel"
 
+# ---- input validation (same rules as the web panel: IPv4, port 1-65535) ----
+is_valid_ip() {
+    [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+    local IFS=. a b c d o
+    read -r a b c d <<<"$1"
+    for o in "$a" "$b" "$c" "$d"; do
+        ((10#$o <= 255)) || return 1
+    done
+}
+
+is_valid_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
+prompt_ip() { # $1=varname $2=label $3=default (empty = required)
+    local __var=$1 __label=$2 __def=$3 __in
+    while true; do
+        if [[ -n "$__def" ]]; then
+            read -p "$__label [Default: $__def]: " __in
+            __in=${__in:-$__def}
+        else
+            read -p "$__label: " __in
+        fi
+        if is_valid_ip "$__in"; then printf -v "$__var" '%s' "$__in"; return 0; fi
+        echo -e "${RED}[!] Invalid IPv4 address: '${__in}'. Example: 203.0.113.10${NC}"
+    done
+}
+
+prompt_port() { # $1=varname $2=label $3=default
+    local __var=$1 __label=$2 __def=$3 __in
+    while true; do
+        read -p "$__label [Default: $__def]: " __in
+        __in=${__in:-$__def}
+        if is_valid_port "$__in"; then printf -v "$__var" '%s' "$((10#$__in))"; return 0; fi
+        echo -e "${RED}[!] Invalid port: '${__in}'. Must be 1-65535.${NC}"
+    done
+}
+
+prompt_required() { # $1=varname $2=label — must be non-empty
+    local __var=$1 __label=$2 __in
+    while true; do
+        read -p "$__label: " __in
+        if [[ -n "$__in" ]]; then printf -v "$__var" '%s' "$__in"; return 0; fi
+        echo -e "${RED}[!] This field is required and cannot be empty.${NC}"
+    done
+}
+
+prompt_token() { # $1=varname $2=label $3=default (empty accepts default)
+    local __var=$1 __label=$2 __def=$3 __in
+    read -p "$__label [Press Enter for: $__def]: " __in
+    printf -v "$__var" '%s' "${__in:-$__def}"
+}
+
+prompt_ports() { # $1=varname $2=label — at least one valid port
+    local __var=$1 __label=$2 __in __ok p
+    while true; do
+        read -p "$__label (e.g. 443, 2083, 8080): " __in
+        __ok=""
+        for p in $(echo "$__in" | tr ',' ' '); do
+            is_valid_port "$p" && __ok="$__ok $((10#$p))"
+        done
+        __ok=$(echo "$__ok" | xargs)
+        if [[ -n "$__ok" ]]; then printf -v "$__var" '%s' "$__ok"; return 0; fi
+        echo -e "${RED}[!] Enter at least one valid port (1-65535).${NC}"
+    done
+}
+
+# validate_setup_common checks non-interactive args with the same rules as
+# the prompts above. Prints a clear error per bad field, returns non-zero.
+validate_setup_common() { # $1=local_pub $2=remote_pub $3=frp_port $4=local_gre
+    local ok=1
+    is_valid_ip "$1" || { echo -e "${RED}[!] Invalid local public IP: '$1'${NC}"; ok=0; }
+    is_valid_ip "$2" || { echo -e "${RED}[!] Invalid remote public IP: '$2'${NC}"; ok=0; }
+    is_valid_port "$3" || { echo -e "${RED}[!] Invalid FRP port: '$3' (must be 1-65535)${NC}"; ok=0; }
+    is_valid_ip "$4" || { echo -e "${RED}[!] Invalid local GRE IP: '$4'${NC}"; ok=0; }
+    return $((1 - ok))
+}
+
+tunnel_present() {
+    ip tunnel show 2>/dev/null | grep -q "$TUNNEL_NAME" && return 0
+    [[ -f "${CONFIG_DIR}/frps.toml" || -f "${CONFIG_DIR}/frpc.toml" ]] && return 0
+    return 1
+}
+
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         echo -e "${RED}[!] This script must be run as root (sudo).${NC}"
@@ -122,36 +206,18 @@ EOF
     echo -e "${GREEN}[✔️] GRE Tunnel service active with IP ${GRE_INTERNAL_IP}.${NC}"
 }
 
-setup_iran_server() {
-    echo -e "\n${YELLOW}====================================================${NC}"
-    echo -e "${YELLOW}       STEP 1: CONFIGURING IRAN SERVER (GRE + FRPS)  ${NC}"
-    echo -e "${YELLOW}====================================================${NC}"
-
-    # Prefer the local interface IP (what GRE must bind to) over the egress IP
-    # an external service sees (often different behind NAT, e.g. ipify).
-    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
-    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
-    read -p "Enter IRAN Server Public IP [Default: $MY_PUBLIC_IP]: " IP_IRAN
-    IP_IRAN=${IP_IRAN:-$MY_PUBLIC_IP}
-
-    read -p "Enter FOREIGN Server Public IP: " IP_FOREIGN
-    while [[ -z "$IP_FOREIGN" ]]; do
-        read -p "FOREIGN Server IP cannot be empty. Enter IP: " IP_FOREIGN
-    done
-
-    # 1. Setup GRE Tunnel
-    setup_gre_systemd "$IP_IRAN" "$IP_FOREIGN" "$IRAN_GRE_IP"
-
-    # 2. Setup FRP Server (frps)
+# ---- SINGLE SOURCE OF TRUTH for install logic ----
+# setup_iran_server_noninteractive / setup_foreign_server_noninteractive do the
+# real work. The interactive menu functions below only prompt + validate, then
+# delegate here. The web panel calls the same functions via the CLI flags at
+# the bottom of this file (setup-iran / setup-foreign), so all three paths
+# (menu, CLI, panel) execute identical steps.
+# Args: $1=local_pub $2=remote_pub $3=frp_port $4=token [$5=local_gre [$6=peer_gre [$7="cleaned ports"]]]
+setup_iran_server_noninteractive() {
+    local IP_IRAN=$1 IP_FOREIGN=$2 BIND_PORT=$3 TOKEN=$4
+    local LOCAL_GRE=${5:-$IRAN_GRE_IP} PEER_GRE=${6:-$FOREIGN_GRE_IP}
+    setup_gre_systemd "$IP_IRAN" "$IP_FOREIGN" "$LOCAL_GRE"
     install_frp_binaries
-
-    read -p "Enter FRP Bind Port [Default: 7000]: " BIND_PORT
-    BIND_PORT=${BIND_PORT:-7000}
-
-    AUTO_TOKEN=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16 2>/dev/null || openssl rand -hex 8)
-    read -p "Enter Secret Auth Token [Press Enter for: $AUTO_TOKEN]: " TOKEN
-    TOKEN=${TOKEN:-$AUTO_TOKEN}
-
     cat <<EOF > "${CONFIG_DIR}/frps.toml"
 bindAddr = "0.0.0.0"
 bindPort = ${BIND_PORT}
@@ -159,7 +225,6 @@ auth.method = "token"
 auth.token = "${TOKEN}"
 transport.tls.force = false
 EOF
-
     cat <<EOF > /etc/systemd/system/frps.service
 [Unit]
 Description=FRP Server Service
@@ -176,88 +241,52 @@ ExecStart=${INSTALL_DIR}/frps -c ${CONFIG_DIR}/frps.toml
 [Install]
 WantedBy=multi-user.target
 EOF
-
     systemctl daemon-reload
     systemctl enable frps >/dev/null 2>&1
     systemctl restart frps
-
-    # Allow firewall if ufw is active
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
         ufw allow "${BIND_PORT}/tcp" >/dev/null 2>&1
     fi
-
-    echo -e "\n${GREEN}=================================================================${NC}"
-    echo -e "${GREEN}[✔️] IRAN SERVER CONFIGURATION COMPLETE!${NC}"
-    echo -e "GRE Public Link:      ${CYAN}${IP_IRAN} <--> ${IP_FOREIGN}${NC}"
-    echo -e "IRAN GRE Internal IP: ${CYAN}${IRAN_GRE_IP}${NC}"
-    echo -e "FRP Bind Port:        ${CYAN}${BIND_PORT}${NC}"
-    echo -e "Secret Token:         ${CYAN}${TOKEN}${NC}"
-    echo -e "\n${YELLOW}>>> Now run this script on FOREIGN server and provide:${NC}"
-    echo -e "1. IRAN Public IP: ${CYAN}${IP_IRAN}${NC}"
-    echo -e "2. Port:           ${CYAN}${BIND_PORT}${NC}"
-    echo -e "3. Token:          ${CYAN}${TOKEN}${NC}"
-    echo -e "${GREEN}=================================================================${NC}\n"
-
-    # panel comes free with the tunnel — no extra step needed
-    install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
+    echo -e "${GREEN}[✔️] IRAN setup done: GRE ${IP_IRAN} <-> ${IP_FOREIGN} (${LOCAL_GRE} peer ${PEER_GRE}), frps :${BIND_PORT}${NC}"
+    echo -e "${YELLOW}Token: ${TOKEN} (copy to the FOREIGN side)${NC}"
+    if [[ "${GRE_SKIP_PANEL:-0}" == "1" ]]; then
+        echo -e "${CYAN}[*] Skipping panel install (called from panel).${NC}"
+    else
+        install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
+    fi
 }
 
-setup_foreign_server() {
-    echo -e "\n${YELLOW}====================================================${NC}"
-    echo -e "${YELLOW}   STEP 2: CONFIGURING FOREIGN SERVER (GRE + FRPC)  ${NC}"
-    echo -e "${YELLOW}====================================================${NC}"
-    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
-    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
-    read -p "Enter FOREIGN Server Public IP [Default: $MY_PUBLIC_IP]: " IP_FOREIGN
-    IP_FOREIGN=${IP_FOREIGN:-$MY_PUBLIC_IP}
+setup_foreign_server_noninteractive() {
+    local IP_FOREIGN=$1 IP_IRAN=$2 SERVER_PORT=$3 TOKEN=$4
+    local LOCAL_GRE=${5:-$FOREIGN_GRE_IP} PEER_GRE=${6:-$IRAN_GRE_IP}
+    local PORTS_CLEANED=${7:-}
+    _setup_foreign_full "$IP_FOREIGN" "$IP_IRAN" "$SERVER_PORT" "$TOKEN" "$LOCAL_GRE" "$PEER_GRE" "$PORTS_CLEANED"
+}
 
-    read -p "Enter IRAN Server Public IP: " IP_IRAN
-    while [[ -z "$IP_IRAN" ]]; do
-        read -p "IRAN Server IP cannot be empty. Enter IP: " IP_IRAN
-    done
-
-    # 1. Setup GRE Tunnel
-    setup_gre_systemd "$IP_FOREIGN" "$IP_IRAN" "$FOREIGN_GRE_IP"
-
-    # Test GRE Connectivity via Ping
-    echo -e "${CYAN}[*] Testing GRE internal ping to Iran (${IRAN_GRE_IP})...${NC}"
-    if ping -c 3 -W 2 "$IRAN_GRE_IP" >/dev/null 2>&1; then
+# shared full foreign path: GRE + ping feedback + frpc binaries/config/service + panel.
+# Called by the interactive menu, the CLI, and (via CLI) the web panel.
+_setup_foreign_full() {
+    local IP_FOREIGN=$1 IP_IRAN=$2 SERVER_PORT=$3 TOKEN=$4
+    local LOCAL_GRE=$5 PEER_GRE=$6 PORTS_CLEANED=$7
+    setup_gre_systemd "$IP_FOREIGN" "$IP_IRAN" "$LOCAL_GRE"
+    echo -e "${CYAN}[*] Testing GRE internal ping to Iran (${PEER_GRE})...${NC}"
+    if ping -c 3 -W 2 "$PEER_GRE" >/dev/null 2>&1; then
         echo -e "${GREEN}[✔️] GRE Tunnel link is UP and reachable!${NC}"
     else
-        echo -e "${YELLOW}[!] Warning: Ping to ${IRAN_GRE_IP} did not respond yet.${NC}"
-        echo -e "${YELLOW}    (Make sure you configured IRAN server first and ICMP is allowed).${NC}"
+        echo -e "${YELLOW}[!] Warning: Ping to ${PEER_GRE} did not respond yet.${NC}"
     fi
-
-    # 2. Setup FRP Client (frpc)
     install_frp_binaries
-
-    read -p "Enter FRP Bind Port [Default: 7000]: " SERVER_PORT
-    SERVER_PORT=${SERVER_PORT:-7000}
-
-    read -p "Enter Secret Auth Token: " TOKEN
-    while [[ -z "$TOKEN" ]]; do
-        read -p "Token cannot be empty. Enter Token: " TOKEN
-    done
-
-    read -p "Enter Ports to Reverse-Tunnel (e.g. 443, 2083, 8080): " INPUT_PORTS
-    while [[ -z "$INPUT_PORTS" ]]; do
-        read -p "Please enter at least one port: " INPUT_PORTS
-    done
-
-    # We connect frpc to Iran's GRE internal IP ($IRAN_GRE_IP) through the GRE tunnel!
     cat <<EOF > "${CONFIG_DIR}/frpc.toml"
-serverAddr = "${IRAN_GRE_IP}"
+serverAddr = "${PEER_GRE}"
 serverPort = ${SERVER_PORT}
 auth.method = "token"
 auth.token = "${TOKEN}"
 transport.tls.enable = true
 
 EOF
-
-    PORTS_CLEANED=$(echo "$INPUT_PORTS" | tr ',' ' ')
+    local PORT
     for PORT in $PORTS_CLEANED; do
-        if [[ "$PORT" =~ ^[0-9]+$ ]]; then
-            cat <<EOF >> "${CONFIG_DIR}/frpc.toml"
+        cat <<EOF >> "${CONFIG_DIR}/frpc.toml"
 [[proxies]]
 name = "tcp_${PORT}"
 type = "tcp"
@@ -273,9 +302,7 @@ localPort = ${PORT}
 remotePort = ${PORT}
 
 EOF
-        fi
     done
-
     cat <<EOF > /etc/systemd/system/frpc.service
 [Unit]
 Description=FRP Client Reverse Service
@@ -292,10 +319,71 @@ ExecStart=${INSTALL_DIR}/frpc -c ${CONFIG_DIR}/frpc.toml
 [Install]
 WantedBy=multi-user.target
 EOF
-
     systemctl daemon-reload
     systemctl enable frpc >/dev/null 2>&1
     systemctl restart frpc
+    echo -e "${GREEN}[✔️] FOREIGN setup done: GRE ${IP_FOREIGN} <-> ${IP_IRAN} (${LOCAL_GRE} peer ${PEER_GRE}), frpc → ${PEER_GRE}:${SERVER_PORT}${NC}"
+    echo -e "${GREEN}Reverse ports: ${PORTS_CLEANED} (TCP & UDP, TLS)${NC}"
+    if [[ "${GRE_SKIP_PANEL:-0}" == "1" ]]; then
+        echo -e "${CYAN}[*] Skipping panel install (called from panel).${NC}"
+    else
+        install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
+    fi
+}
+
+setup_iran_server() {
+    echo -e "\n${YELLOW}====================================================${NC}"
+    echo -e "${YELLOW}       STEP 1: CONFIGURING IRAN SERVER (GRE + FRPS)  ${NC}"
+    echo -e "${YELLOW}====================================================${NC}"
+
+    # Prefer the local interface IP (what GRE must bind to) over the egress IP
+    # an external service sees (often different behind NAT, e.g. ipify).
+    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
+    prompt_ip IP_IRAN "Enter IRAN Server Public IP" "$MY_PUBLIC_IP"
+    prompt_ip IP_FOREIGN "Enter FOREIGN Server Public IP" ""
+
+    prompt_port BIND_PORT "Enter FRP Bind Port" "7000"
+
+    AUTO_TOKEN=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16 2>/dev/null || openssl rand -hex 8)
+    prompt_token TOKEN "Enter Secret Auth Token" "$AUTO_TOKEN"
+
+    # single source of truth: GRE + frps + panel all happen inside
+    setup_iran_server_noninteractive "$IP_IRAN" "$IP_FOREIGN" "$BIND_PORT" "$TOKEN" "$IRAN_GRE_IP" "$FOREIGN_GRE_IP"
+
+    echo -e "\n${GREEN}=================================================================${NC}"
+    echo -e "${GREEN}[✔️] IRAN SERVER CONFIGURATION COMPLETE!${NC}"
+    echo -e "GRE Public Link:      ${CYAN}${IP_IRAN} <--> ${IP_FOREIGN}${NC}"
+    echo -e "IRAN GRE Internal IP: ${CYAN}${IRAN_GRE_IP}${NC}"
+    echo -e "FRP Bind Port:        ${CYAN}${BIND_PORT}${NC}"
+    echo -e "Secret Token:         ${CYAN}${TOKEN}${NC}"
+    echo -e "\n${YELLOW}>>> Now run this script on FOREIGN server and provide:${NC}"
+    echo -e "1. IRAN Public IP: ${CYAN}${IP_IRAN}${NC}"
+    echo -e "2. Port:           ${CYAN}${BIND_PORT}${NC}"
+    echo -e "3. Token:          ${CYAN}${TOKEN}${NC}"
+    echo -e "${GREEN}=================================================================${NC}\n"
+
+    # panel is already running here (menu path) — install it fresh
+    install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
+}
+
+setup_foreign_server() {
+    echo -e "\n${YELLOW}====================================================${NC}"
+    echo -e "${YELLOW}   STEP 2: CONFIGURING FOREIGN SERVER (GRE + FRPC)  ${NC}"
+    echo -e "${YELLOW}====================================================${NC}"
+    MY_PUBLIC_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    [[ -z "$MY_PUBLIC_IP" ]] && MY_PUBLIC_IP=$(curl -sSL --max-time 5 https://api.ipify.org 2>/dev/null)
+    prompt_ip IP_FOREIGN "Enter FOREIGN Server Public IP" "$MY_PUBLIC_IP"
+    prompt_ip IP_IRAN "Enter IRAN Server Public IP" ""
+
+    prompt_port SERVER_PORT "Enter FRP Bind Port" "7000"
+    prompt_required TOKEN "Enter Secret Auth Token"
+    prompt_ports INPUT_PORTS "Enter Ports to Reverse-Tunnel"
+
+    # single source of truth: GRE + ping + frpc + panel all happen inside
+    # (frpc reaches Iran's GRE internal IP through the GRE tunnel)
+    PORTS_CLEANED=$(echo "$INPUT_PORTS" | tr ',' ' ')
+    _setup_foreign_full "$IP_FOREIGN" "$IP_IRAN" "$SERVER_PORT" "$TOKEN" "$FOREIGN_GRE_IP" "$IRAN_GRE_IP" "$PORTS_CLEANED"
 
     echo -e "\n${GREEN}=================================================================${NC}"
     echo -e "${GREEN}[✔️] FOREIGN SERVER CONFIGURATION COMPLETE!${NC}"
@@ -306,7 +394,7 @@ EOF
     echo -e "FRP TLS Encryption:   ${GREEN}Enabled${NC}"
     echo -e "${GREEN}=================================================================${NC}\n"
 
-    # panel comes free with the tunnel — no extra step needed
+    # panel is already running here (menu path) — install it fresh
     install_panel || echo -e "${YELLOW}[!] Panel auto-install failed — retry from menu option 7.${NC}"
 }
 
@@ -394,6 +482,15 @@ remove_tunnel() {
     echo -e "\n${RED}=== Removing GRE + FRP Tunnel (panel stays) ===${NC}"
     read -p "Remove the tunnel from THIS server? Panel stays installed. (y/N): " CONFIRM
     if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+        remove_tunnel_force
+    else
+        echo -e "${YELLOW}[*] Aborted.${NC}"
+    fi
+}
+
+# Non-interactive core: stop/disable units, drop interface, remove FRP files.
+# Panel files/services are never touched here.
+remove_tunnel_force() {
         # Stop & disable services
         systemctl stop frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
         systemctl disable frps frpc "${TUNNEL_NAME}.service" >/dev/null 2>&1
@@ -411,9 +508,6 @@ remove_tunnel() {
         rm -rf "$CONFIG_DIR"
 
         echo -e "${GREEN}[✔️] Tunnel removed — GRE interface, FRP services, binaries and configs gone. Panel still running.${NC}"
-    else
-        echo -e "${YELLOW}[*] Aborted.${NC}"
-    fi
 }
 
 PANEL_DIR="/usr/local/gre-panel"
@@ -650,4 +744,91 @@ main_menu() {
 }
 
 check_root
+# Non-interactive CLI: gre.sh setup-iran|setup-foreign with flags.
+# The setup_*_noninteractive + _setup_foreign_full functions above are the
+# SINGLE source of truth — menu, CLI, and web panel all run the same steps.
+usage_cli() {
+    cat <<EOF
+Usage:
+  bash gre.sh                                   # interactive menu
+  bash gre.sh setup-iran    --local-pub IP --remote-pub IP [--frp-port N] [--local-gre IP] [--peer-gre IP] [--token T] [--force]
+  bash gre.sh setup-foreign --local-pub IP --remote-pub IP [--frp-port N] --token T --ports "443, 2083" [--local-gre IP] [--peer-gre IP] [--force]
+  bash gre.sh status | remove-tunnel [--force] | show-panel-url
+EOF
+}
+
+cli_setup_iran() {
+    local LOCAL_PUB="" REMOTE_PUB="" FRP_PORT="7000" LOCAL_GRE="$IRAN_GRE_IP" PEER_GRE="$FOREIGN_GRE_IP" TOKEN="" FORCE=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --local-pub) LOCAL_PUB="$2"; shift 2 ;;
+            --remote-pub) REMOTE_PUB="$2"; shift 2 ;;
+            --frp-port) FRP_PORT="$2"; shift 2 ;;
+            --local-gre) LOCAL_GRE="$2"; shift 2 ;;
+            --peer-gre) PEER_GRE="$2"; shift 2 ;;
+            --token) TOKEN="$2"; shift 2 ;;
+            --force) FORCE=1; shift ;;
+            -h|--help) usage_cli; return 0 ;;
+            *) echo -e "${RED}[!] Unknown flag: $1${NC}"; usage_cli; return 1 ;;
+        esac
+    done
+    validate_setup_common "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$LOCAL_GRE" || return 1
+    is_valid_ip "$PEER_GRE" || { echo -e "${RED}[!] Invalid peer GRE IP: '$PEER_GRE'${NC}"; return 1; }
+    if [[ -z "$TOKEN" ]]; then
+        TOKEN=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16 2>/dev/null || openssl rand -hex 8)
+        echo -e "${CYAN}[*] Generated token: ${TOKEN}${NC}"
+    fi
+    if tunnel_present && [[ "$FORCE" -ne 1 ]]; then
+        echo -e "${RED}[!] Tunnel already exists — pass --force to overwrite.${NC}"
+        return 1
+    fi
+    setup_iran_server_noninteractive "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$TOKEN" "$LOCAL_GRE" "$PEER_GRE"
+}
+
+cli_setup_foreign() {
+    local LOCAL_PUB="" REMOTE_PUB="" FRP_PORT="7000" LOCAL_GRE="$FOREIGN_GRE_IP" PEER_GRE="$IRAN_GRE_IP" TOKEN="" PORTS="" FORCE=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --local-pub) LOCAL_PUB="$2"; shift 2 ;;
+            --remote-pub) REMOTE_PUB="$2"; shift 2 ;;
+            --frp-port) FRP_PORT="$2"; shift 2 ;;
+            --local-gre) LOCAL_GRE="$2"; shift 2 ;;
+            --peer-gre) PEER_GRE="$2"; shift 2 ;;
+            --token) TOKEN="$2"; shift 2 ;;
+            --ports) PORTS="$2"; shift 2 ;;
+            --force) FORCE=1; shift ;;
+            -h|--help) usage_cli; return 0 ;;
+            *) echo -e "${RED}[!] Unknown flag: $1${NC}"; usage_cli; return 1 ;;
+        esac
+    done
+    validate_setup_common "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$LOCAL_GRE" || return 1
+    is_valid_ip "$PEER_GRE" || { echo -e "${RED}[!] Invalid peer GRE IP: '$PEER_GRE'${NC}"; return 1; }
+    [[ -n "$TOKEN" ]] || { echo -e "${RED}[!] --token is required (copy it from the Iran side).${NC}"; return 1; }
+    local CLEANED="" p
+    for p in $(echo "$PORTS" | tr ',' ' '); do
+        is_valid_port "$p" && CLEANED="$CLEANED $((10#$p))"
+    done
+    CLEANED=$(echo "$CLEANED" | xargs)
+    [[ -n "$CLEANED" ]] || { echo -e "${RED}[!] --ports needs at least one valid port (e.g. \"443, 2083\").${NC}"; return 1; }
+    if tunnel_present && [[ "$FORCE" -ne 1 ]]; then
+        echo -e "${RED}[!] Tunnel already exists — pass --force to overwrite.${NC}"
+        return 1
+    fi
+    setup_foreign_server_noninteractive "$LOCAL_PUB" "$REMOTE_PUB" "$FRP_PORT" "$TOKEN" "$LOCAL_GRE" "$PEER_GRE" "$CLEANED"
+}
+
+if [[ $# -gt 0 ]]; then
+    check_root
+    case "$1" in
+        setup-iran) shift; cli_setup_iran "$@" ;;
+        setup-foreign) shift; cli_setup_foreign "$@" ;;
+        status) check_status ;;
+        remove-tunnel)
+            if [[ "${2:-}" == "--force" ]]; then remove_tunnel_force; else remove_tunnel; fi ;;
+        show-panel-url) show_panel_url ;;
+        -h|--help|help) usage_cli ;;
+        *) echo -e "${RED}[!] Unknown command: $1${NC}"; usage_cli; exit 1 ;;
+    esac
+    exit $?
+fi
 main_menu
