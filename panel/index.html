@@ -42,7 +42,52 @@
   label { display:grid; gap:4px; font-size:12px; color:#98989f; margin-bottom:8px; }
   pre { background:#000; border-radius:8px; padding:12px; overflow:auto;
     max-height:300px; font-size:12px; }
-  #login { max-width:340px; margin:15vh auto; }
+  #login { position:fixed; inset:0; z-index:50; display:grid; place-items:center;
+    background:#09090b; color:#f4f4f5; min-height:100dvh; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  #login #kineticGrid { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #login .card { position:relative; z-index:1; width:min(92vw,410px); padding:40px 32px 28px;
+    background:#121214; border:1px solid rgba(255,255,255,.08); border-radius:16px;
+    box-shadow:0 30px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
+    text-align:center; animation:rise .6s cubic-bezier(.16,1,.3,1) both; }
+  @keyframes rise { from { opacity:0; transform:translateY(20px) scale(.98); } }
+  #login .logo { width:72px; height:72px; margin:0 auto 16px; border-radius:20px;
+    display:flex; align-items:center; justify-content:center;
+    background:#18181b; border:1px solid rgba(56,189,248,.3);
+    box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 20px rgba(56,189,248,.15); }
+  #login h1 { font-size:22px; font-weight:600; letter-spacing:-.02em; margin:0; color:#f4f4f5; }
+  #login .sub { color:#a1a1aa; font-size:13px; margin:6px 0 24px; }
+  #login form { display:flex; flex-direction:column; gap:14px; }
+  #login .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); border:0; }
+  #login .field { position:relative; display:flex; align-items:center; }
+  #login .field input { width:100%; padding:12px 42px 12px 14px; font-size:14px;
+    color:#f4f4f5; background:#09090b; border:1px solid rgba(255,255,255,.08);
+    border-radius:10px; outline:none;
+    transition:border-color .2s, box-shadow .2s, background .2s; }
+  #login .field input::placeholder { color:#52525b; }
+  #login .field input:focus { border-color:#38bdf8;
+    box-shadow:0 0 0 3px rgba(56,189,248,.15); background:#09090b; }
+  #login .field-icon { position:absolute; right:14px; color:#71717a; pointer-events:none;
+    display:grid; place-items:center; }
+  #login .ic { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round; }
+  #login .toggle { position:absolute; right:8px; width:32px; height:32px; border-radius:8px;
+    border:none; cursor:pointer; background:transparent; color:#71717a;
+    display:grid; place-items:center; transition:color .2s; padding:0; min-height:0; }
+  #login .toggle:hover { color:#38bdf8; }
+  #login #loginBtn { margin-top:6px; min-height:44px; padding:0 16px; font-size:14px;
+    font-weight:600; color:#fff; cursor:pointer; width:100%;
+    background:linear-gradient(135deg,#0284c7 0%,#2563eb 100%); border:none; border-radius:10px;
+    transition:transform .2s, box-shadow .2s, opacity .2s;
+    box-shadow:0 6px 20px rgba(2,132,199,.3); touch-action:manipulation; }
+  #login #loginBtn:hover { transform:translateY(-1px);
+    box-shadow:0 8px 24px rgba(2,132,199,.45); opacity:.96; }
+  #login #loginBtn:active { transform:translateY(0) scale(.99); }
+  #loginErr { color:#ff453a; font-size:13px; min-height:20px; margin:12px 0 0; }
+  #login .foot { margin-top:22px; color:#71717a; font-size:11.5px; letter-spacing:.02em; }
+  #login .foot b { color:#e4e4e7; font-weight:600; }
   .hidden { display:none !important; }
   .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
     background:#222; padding:10px 16px; border-radius:8px; }
@@ -51,12 +96,46 @@
 <body>
 
 <div id="login" class="hidden">
+  <canvas id="kineticGrid" aria-hidden="true"></canvas>
   <div class="card">
-    <h2>GRE-FRP Panel</h2>
-    <label>Username<input id="u" autocomplete="username"></label>
-    <label>Password<input id="p" type="password" autocomplete="current-password"></label>
-    <button id="loginBtn" style="width:100%">Login</button>
-    <p id="loginErr" style="color:var(--bad)"></p>
+    <div class="logo" aria-hidden="true">
+      <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="loginMustacheGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#38bdf8"/>
+            <stop offset="50%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#2563eb"/>
+          </linearGradient>
+          <filter id="loginGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3.5" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+        </defs>
+        <rect width="100" height="100" rx="22" fill="#090d16" stroke="rgba(56,189,248,0.25)" stroke-width="1.5"/>
+        <path d="M50 48 C42 38 26 32 12 42 C4 48 1 56 3 62 C6 60 12 54 20 55 C32 56 42 60 50 52 C58 60 68 56 80 55 C88 54 94 60 97 62 C99 56 96 48 88 42 C74 32 58 38 50 48 Z" fill="url(#loginMustacheGrad)" filter="url(#loginGlow)"/>
+      </svg>
+    </div>
+    <h1>GRE-FRP Tunnel</h1>
+    <div class="sub">Sign in with your username and password</div>
+    <form id="loginForm">
+      <label class="sr-only" for="u">Username</label>
+      <div class="field">
+        <input id="u" maxlength="64" placeholder="Username" autofocus autocomplete="username">
+        <div class="field-icon">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+      </div>
+      <label class="sr-only" for="p">Password</label>
+      <div class="field">
+        <input id="p" type="password" maxlength="128" placeholder="Password" autocomplete="current-password">
+        <button type="button" class="toggle" id="toggle" aria-label="Show password" aria-pressed="false">
+          <svg class="ic" viewBox="0 0 24 24" id="eye"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <button type="submit" id="loginBtn">Sign in</button>
+    </form>
+    <p id="loginErr"></p>
+    <div class="foot"><b>GRE-FRP Tunnel</b> · Infrastructure</div>
   </div>
 </div>
 
@@ -149,13 +228,134 @@ async function refresh() {
   } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
 }
 
-$('loginBtn').onclick = async () => {
-  try {
-    await api('/api/login', {username: $('u').value, password: $('p').value});
-    $('p').value = ''; $('loginErr').textContent = '';
-    showApp(); refresh();
-  } catch(e) { $('loginErr').textContent = e.message; }
-};
+function doLogin() {
+  return (async () => {
+    try {
+      await api('/api/login', {username: $('u').value, password: $('p').value});
+      $('p').value = ''; $('loginErr').textContent = '';
+      showApp(); refresh();
+    } catch(e) { $('loginErr').textContent = e.message; }
+  })();
+}
+$('loginForm').addEventListener('submit', e => { e.preventDefault(); doLogin(); });
+$('u').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('p').focus(); } });
+$('toggle').addEventListener('click', () => {
+  const i = $('p'), t = $('toggle'), e = $('eye');
+  const show = i.type === 'password';
+  i.type = show ? 'text' : 'password';
+  t.setAttribute('aria-pressed', show); t.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  e.innerHTML = show
+    ? '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>'
+    : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>';
+  i.focus();
+});
+// kinetic grid background (same as Hashem login)
+(function(){
+  const CELL_SIZE = 55, INFLUENCE_RADIUS = 260, MAX_WARP = 24;
+  const DOT_SPACING = 28, LERP_SPEED = 0.08;
+  const LINE_BASE = { r: 255, g: 255, b: 255, a: 0.13 };
+  const NODE_BASE_RADIUS = 1.8, NODE_ACTIVE_RADIUS = 3.2;
+  const lerpN = (a,b,t) => a + (b - a) * t;
+  const lerpColor = (base,active,t) => {
+    const r = Math.round(lerpN(base.r,active.r,t)), g = Math.round(lerpN(base.g,active.g,t)),
+          b = Math.round(lerpN(base.b,active.b,t)), a = lerpN(base.a,active.a,t);
+    return 'rgba('+r+','+g+','+b+','+a.toFixed(3)+')';
+  };
+  const canvas = document.getElementById('kineticGrid');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, mouse = {x:-9999,y:-9999}, targetMouse = {x:-9999,y:-9999}, ripples = [];
+  const theme = { bg:'#09090b', lineActive:{r:56,g:189,b:248,a:0.9},
+    nodeActive:{r:56,g:189,b:248,a:1.0}, glow:'56,189,248', ripple:'56,189,248' };
+  function setSize(){ W = innerWidth; H = innerHeight; canvas.width = W; canvas.height = H;
+    if (mouse.x === -9999) { mouse = {x:W/2,y:H/2}; targetMouse = {x:W/2,y:H/2}; } }
+  addEventListener('resize', setSize); setSize();
+  addEventListener('mousemove', e => { targetMouse.x = e.clientX; targetMouse.y = e.clientY; });
+  addEventListener('click', e => { ripples.push({x:e.clientX,y:e.clientY,radius:0,opacity:1,born:performance.now()}); });
+  function getWarpedPoint(gx,gy,col,row,cols,rows){
+    const edgeMargin = 1.5;
+    const colPin = Math.min(col/edgeMargin,(cols-1-col)/edgeMargin,1);
+    const rowPin = Math.min(row/edgeMargin,(rows-1-row)/edgeMargin,1);
+    const pinFactor = colPin*colPin*rowPin*rowPin;
+    const dx = gx-mouse.x, dy = gy-mouse.y, dist = Math.sqrt(dx*dx+dy*dy);
+    const proximity = Math.max(0,1-dist/INFLUENCE_RADIUS)*pinFactor;
+    let rx = 0, ry = 0;
+    for (const r of ripples){
+      const rdx = gx-r.x, rdy = gy-r.y, rdist = Math.sqrt(rdx*rdx+rdy*rdy);
+      const waveWidth = 55, diff = rdist-r.radius;
+      if (Math.abs(diff) < waveWidth){
+        const strength = (1-Math.abs(diff)/waveWidth)*r.opacity*18*pinFactor;
+        const angle = Math.atan2(rdy,rdx), sign = diff < 0 ? -1 : 1;
+        rx += Math.cos(angle)*strength*sign*-1; ry += Math.sin(angle)*strength*sign*-1;
+      }
+    }
+    if (dist < INFLUENCE_RADIUS && dist > 0 && pinFactor > 0){
+      const t = dist/INFLUENCE_RADIUS;
+      const eased = t < 0.01 ? 0 : (1-t)*(1-t)*Math.min(1,dist/60);
+      const warpAmt = eased*MAX_WARP*pinFactor, angle = Math.atan2(dy,dx);
+      return { pt:{x:gx-Math.cos(angle)*warpAmt+rx, y:gy-Math.sin(angle)*warpAmt+ry}, proximity };
+    }
+    return { pt:{x:gx+rx, y:gy+ry}, proximity };
+  }
+  function draw(now){
+    ctx.clearRect(0,0,W,H); ctx.fillStyle = theme.bg; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let x = DOT_SPACING/2; x < W; x += DOT_SPACING)
+      for (let y = DOT_SPACING/2; y < H; y += DOT_SPACING){
+        ctx.beginPath(); ctx.arc(x,y,0.7,0,Math.PI*2); ctx.fill();
+      }
+    for (let i = ripples.length-1; i >= 0; i--){
+      const r = ripples[i], age = (now-r.born)/1000;
+      r.radius = Math.max(0,age*400); r.opacity = Math.max(0,1-age*1.2);
+      if (r.opacity <= 0) ripples.splice(i,1);
+    }
+    const cols = Math.max(2,Math.ceil(W/CELL_SIZE))+1, rows = Math.max(2,Math.ceil(H/CELL_SIZE))+1;
+    const cellW = W/(cols-1), cellH = H/(rows-1), pts = [], prox = [];
+    for (let row = 0; row < rows; row++){
+      pts[row] = []; prox[row] = [];
+      for (let col = 0; col < cols; col++){
+        const wp = getWarpedPoint(col*cellW,row*cellH,col,row,cols,rows);
+        pts[row][col] = wp.pt; prox[row][col] = wp.proximity;
+      }
+    }
+    const drawSeg = (p1,p2,pr1,pr2) => {
+      const avg = (pr1+pr2)/2, t = avg*avg*(3-2*avg);
+      ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+      ctx.strokeStyle = lerpColor(LINE_BASE,theme.lineActive,t);
+      ctx.lineWidth = lerpN(0.8,1.5,t); ctx.stroke();
+    };
+    ctx.lineCap = 'butt';
+    for (let row = 0; row < rows; row++)
+      for (let col = 0; col < cols-1; col++) drawSeg(pts[row][col],pts[row][col+1],prox[row][col],prox[row][col+1]);
+    for (let col = 0; col < cols; col++)
+      for (let row = 0; row < rows-1; row++) drawSeg(pts[row][col],pts[row+1][col],prox[row][col],prox[row+1][col]);
+    for (let row = 0; row < rows; row++)
+      for (let col = 0; col < cols; col++){
+        const p = pts[row][col], pr = prox[row][col], t = pr*pr*(3-2*pr);
+        const r = lerpN(NODE_BASE_RADIUS,NODE_ACTIVE_RADIUS,t);
+        if (t > 0.3){
+          const glowR = r+lerpN(0,6,(t-0.3)/0.7);
+          const grd = ctx.createRadialGradient(p.x,p.y,r*0.5,p.x,p.y,glowR);
+          grd.addColorStop(0,'rgba('+theme.glow+','+(t*0.3).toFixed(3)+')');
+          grd.addColorStop(1,'rgba('+theme.glow+',0)');
+          ctx.beginPath(); ctx.arc(p.x,p.y,glowR,0,Math.PI*2);
+          ctx.fillStyle = grd; ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+        ctx.fillStyle = lerpColor({r:255,g:255,b:255,a:0.2},theme.nodeActive,t); ctx.fill();
+      }
+    for (const r of ripples){
+      ctx.beginPath(); ctx.arc(r.x,r.y,Math.max(0,r.radius),0,Math.PI*2);
+      ctx.strokeStyle = 'rgba('+theme.ripple+','+(r.opacity*0.28).toFixed(3)+')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  (function animate(now){
+    mouse.x = lerpN(mouse.x,targetMouse.x,LERP_SPEED);
+    mouse.y = lerpN(mouse.y,targetMouse.y,LERP_SPEED);
+    draw(now); requestAnimationFrame(animate);
+  })(0);
+})();
 $('logoutBtn').onclick = async () => { try { await api('/api/logout', {}); } catch(e){} showLogin(); };
 $('refreshBtn').onclick = refresh;
 document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
