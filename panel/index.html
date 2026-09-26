@@ -157,6 +157,34 @@
     </div>
     <pre id="actOut" class="hidden"></pre>
   </div>
+  <div class="card" id="setupCard"><h2>Setup tunnel (this side only)</h2>
+    <div class="btns" style="margin:0 0 12px">
+      <button class="ghost" id="roleIran">🇮🇷 Iran (GRE + frps)</button>
+      <button class="ghost" id="roleForeign">🌍 Foreign (GRE + frpc)</button>
+    </div>
+    <div id="setupWarn" class="hidden" style="background:rgba(255,159,10,.12);border:1px solid rgba(255,159,10,.4);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px"></div>
+    <input type="hidden" id="sRole" value="iran">
+    <label>Local public IP (auto-detected, editable)<input id="sLocalPub" inputmode="decimal"></label>
+    <label>Remote public IP (the other server)<input id="sRemotePub" inputmode="decimal" placeholder="e.g. 203.0.113.10"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <label>Local GRE IP<input id="sLocalGre"></label>
+      <label>Peer GRE IP<input id="sPeerGre"></label>
+    </div>
+    <label>FRP port<input id="sFrpPort" inputmode="numeric"></label>
+    <div id="iranBox">
+      <p style="font-size:12px;color:#98989f">Token is auto-generated. After setup, copy it to the Foreign side.</p>
+    </div>
+    <div id="foreignBox" class="hidden">
+      <label>Token (from Iran side)<input id="sToken" autocomplete="off"></label>
+      <label>Reverse ports (comma-separated)<input id="sPorts" placeholder="443, 2083, 8080"></label>
+    </div>
+    <div id="setupToken" class="hidden" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.4);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;word-break:break-all"></div>
+    <div class="btns">
+      <button id="setupBtn">Apply setup</button>
+      <button class="ghost hidden" id="setupForceBtn">Overwrite anyway</button>
+    </div>
+    <pre id="setupOut" class="hidden"></pre>
+  </div>
   <div class="card"><h2>Peer (Turkey)</h2><div id="peerBox"></div>
     <label>Peer panel URL (with secret path)<input id="peerAddr" placeholder="http://10.10.10.1:7777/SECRET"></label>
     <label>User<input id="peerUser" value="admin"></label>
@@ -227,13 +255,81 @@ async function refresh() {
     try { const p = await api('/api/peer'); $('peerAddr').value = p.addr || ''; $('peerUser').value = p.user || 'admin'; } catch(e) {}
   } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
 }
+// ---- setup form ----
+function setRole(role) {
+  $('sRole').value = role;
+  const iran = role === 'iran';
+  $('iranBox').classList.toggle('hidden', !iran);
+  $('foreignBox').classList.toggle('hidden', iran);
+  $('roleIran').style.outline = iran ? '2px solid #0a84ff' : '';
+  $('roleForeign').style.outline = !iran ? '2px solid #0a84ff' : '';
+  if (iran) { $('sLocalGre').value = '10.10.10.2'; $('sPeerGre').value = '10.10.10.1'; }
+  else { $('sLocalGre').value = '10.10.10.1'; $('sPeerGre').value = '10.10.10.2'; }
+}
+$('roleIran').onclick = () => setRole('iran');
+$('roleForeign').onclick = () => setRole('foreign');
+async function loadSetupDefaults() {
+  try {
+    const d = await api('/api/setup');
+    $('sLocalPub').value = d.local_public || '';
+    $('sLocalGre').value = '10.10.10.2'; $('sPeerGre').value = '10.10.10.1';
+    if (d.iran_gre) $('sLocalGre').value = d.iran_gre;
+    if (d.foreign_gre) $('sPeerGre').value = d.foreign_gre;
+    $('sFrpPort').value = d.frp_port || 7000;
+    if (d.role_guess && /foreign|frpc/.test(d.role_guess)) setRole('foreign');
+    if (d.exists) {
+      const w = $('setupWarn');
+      w.innerHTML = '⚠️ A tunnel <b>already exists</b> on this server (GRE interface or FRP config found). Applying setup will overwrite it. Press <b>Overwrite anyway</b> to confirm.';
+      w.classList.remove('hidden');
+      $('setupForceBtn').classList.remove('hidden');
+    }
+  } catch(e) {}
+}
+async function doSetup(force) {
+  const btn = force ? $('setupForceBtn') : $('setupBtn');
+  btn.disabled = true;
+  $('setupToken').classList.add('hidden');
+  try {
+    const body = {
+      role: $('sRole').value,
+      local_public: $('sLocalPub').value.trim(),
+      remote_public: $('sRemotePub').value.trim(),
+      local_gre: $('sLocalGre').value.trim(),
+      peer_gre: $('sPeerGre').value.trim(),
+      frp_port: parseInt($('sFrpPort').value, 10),
+      token: $('sToken').value.trim(),
+      ports: $('sPorts').value,
+      force: !!force,
+    };
+    let r;
+    try {
+      r = await api('/api/setup', body);
+    } catch(e) {
+      if (/already exists/.test(e.message)) { toast('exists — press Overwrite anyway'); return; }
+      throw e;
+    }
+    const out = $('setupOut');
+    out.classList.remove('hidden');
+    out.textContent = (r.steps || []).join('\n');
+    if (r.token) {
+      const t = $('setupToken');
+      t.innerHTML = '🔑 Token (copy to Foreign side): <b>' + esc(r.token) + '</b>';
+      t.classList.remove('hidden');
+    }
+    toast('setup done');
+    refresh();
+  } catch(e) { toast(e.message); }
+  btn.disabled = false;
+}
+$('setupBtn').onclick = () => doSetup(false);
+$('setupForceBtn').onclick = () => doSetup(true);
 
 function doLogin() {
   return (async () => {
     try {
       await api('/api/login', {username: $('u').value, password: $('p').value});
       $('p').value = ''; $('loginErr').textContent = '';
-      showApp(); refresh();
+      showApp(); refresh(); loadSetupDefaults();
     } catch(e) { $('loginErr').textContent = e.message; }
   })();
 }
@@ -382,7 +478,7 @@ $('savePass').onclick = async () => {
 };
 // boot: if already logged in, status works; else show login
 (async () => {
-  try { await api('/api/status'); showApp(); refresh(); }
+  try { await api('/api/status'); showApp(); refresh(); loadSetupDefaults(); }
   catch(e) { showLogin(); }
 })();
 setInterval(() => { if (!$('app').classList.contains('hidden')) refresh(); }, 15000);
