@@ -351,15 +351,17 @@ func recordTrafficSample(traffic map[string]any) {
 	saveHistoryLocked()
 }
 
-// trafficHistory returns downsampled points for range=7d|30d|90d (default 7d).
-// Missing interface (tunnel down) yields gaps: points with null values.
+// trafficHistory returns downsampled points for range=24h|7d|30d|90d.
+// Default 24h. Missing interface (tunnel down) yields gaps: null values.
 func trafficHistory(rng string) []trafficPoint {
 	histMu.Lock()
 	defer histMu.Unlock()
 	hist := loadHistory()
 	now := time.Now().Unix()
-	span := int64(7 * 86400)
+	span := int64(24 * 3600)
 	switch rng {
+	case "7d":
+		span = 7 * 86400
 	case "30d":
 		span = 30 * 86400
 	case "90d":

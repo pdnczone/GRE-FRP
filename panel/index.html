@@ -145,6 +145,58 @@
   #trafficChart { width:100%; height:220px; display:block; }
   .chart-legend { display:flex; gap:16px; font-size:var(--fs-small); color:var(--mu); flex-wrap:wrap; }
   .chart-legend .sw { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  /* Sidebar sections */
+  .nav-sec { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--dim); padding:12px 12px 4px; }
+  .nav-sec:first-child { padding-top:2px; }
+  /* Chart card — Total Traffic & Activity (dark, premium) */
+  .chart-card { background:linear-gradient(180deg, color-mix(in srgb, var(--s1) 92%, #ffffff 8%), var(--s1));
+    border-radius:18px; padding:20px; }
+  .chart-title { font-size:15px; font-weight:700; color:var(--tx); margin:0; letter-spacing:-.01em; }
+  .chart-sub { font-size:var(--fs-small); color:var(--mu); margin-top:2px; }
+  .chart-card .chart-filters { background:rgba(255,255,255,.045); border-color:transparent;
+    border-radius:11px; padding:4px; box-shadow:inset 0 1px 2px rgba(0,0,0,.25); }
+  .chart-card .chart-filters button { color:var(--mu); border-radius:8px; padding:7px 14px; }
+  .chart-card .chart-filters button:hover { color:var(--tx); }
+  .chart-card .chart-filters button[aria-pressed="true"] { background:rgba(255,255,255,.13);
+    color:#fff; box-shadow:0 1px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); }
+  #trafficChart { width:100%; height:260px; display:block; }
+  .chart-down { border:1px solid color-mix(in srgb, var(--er) 45%, transparent); border-radius:var(--r-md);
+    padding:10px 14px; font-size:var(--fs-body); color:var(--er);
+    background:var(--er-soft); box-shadow:0 0 0 1px color-mix(in srgb, var(--er) 20%, transparent); }
+  .chart-card.is-down { border-color:color-mix(in srgb, var(--er) 45%, transparent);
+    box-shadow:0 0 24px color-mix(in srgb, var(--er) 12%, transparent), var(--lift-sm); }
+  /* Update tab */
+  .ver-big { font-size:28px; font-weight:700; color:var(--tx); letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums; }
+  .ver-row { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 0; border-bottom:1px solid var(--ln); font-size:var(--fs-body); }
+  .ver-row:last-child { border:0; }
+  .ver-row .k { color:var(--mu); }
+  /* ---- Apple-grade micro-polish ---- */
+  .tunnel-card, .qs { box-shadow:var(--lift-sm), inset 0 1px 0 rgba(255,255,255,.045); }
+  body[data-t="light"] .tunnel-card, body[data-t="light"] .qs {
+    box-shadow:var(--lift-sm), inset 0 1px 0 rgba(255,255,255,.7); }
+  .nav-item { position:relative; }
+  .nav-item.on::before { content:""; position:absolute; left:-12px; top:8px; bottom:8px; width:3px;
+    border-radius:3px; background:var(--ac); box-shadow:0 0 8px color-mix(in srgb, var(--ac) 60%, transparent); }
+  .status-indicator.active .dot { animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+  :focus-visible { outline:2px solid color-mix(in srgb, var(--ac) 70%, transparent); outline-offset:2px; }
+  .hashem-btn:active:not(:disabled) { transform:scale(.97); }
+  .hashem-btn { transition:transform .15s var(--spring), box-shadow .2s ease, background .2s ease, opacity .2s; }
+  .kpi-val, .dash-big, .ver-big { font-variant-numeric:tabular-nums; }
+  .kpi-ico { transition:transform .25s var(--spring); }
+  .kpi:hover .kpi-ico { transform:scale(1.08); }
+  .chart-card { overflow:hidden; }
+  @media (max-width:640px) { .chart-card { padding:14px; } #trafficChart { height:200px; } }
+  #toast.toast { border-radius:12px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    background:color-mix(in srgb, var(--s2) 88%, transparent); box-shadow:var(--lift);
+    font-size:var(--fs-body); font-weight:500; }
+  .topbar h1 { letter-spacing:-.02em; }
+  .sidebar-brand .brand-name { letter-spacing:.04em; }
+  .chart-filters button { min-height:32px; }
+  .nav-item, .mobnav button { min-height:40px; }
   .sysbar { height:8px; border-radius:99px; background:var(--sunk); overflow:hidden;
     box-shadow:inset 0 1px 2px rgba(0,0,0,.18); }
   .sysbar > i { display:block; height:100%; border-radius:99px;
@@ -275,10 +327,14 @@
       <span class="brand-name">Hashem</span>
     </div>
     <nav class="sidebar-nav" id="sideNav">
+      <div class="nav-sec">Overview</div>
       <button class="nav-item on" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></button>
+      <div class="nav-sec">Tunnel</div>
       <button class="nav-item" data-tab="tunnel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg><span>Tunnel</span></button>
       <button class="nav-item" data-tab="setup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Setup</span></button>
       <button class="nav-item" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Logs</span></button>
+      <div class="nav-sec">System</div>
+      <button class="nav-item" data-tab="update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg><span>Update</span><span class="badge info hidden" id="updBadge" style="margin-left:auto">new</span></button>
       <button class="nav-item" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.06-.4.1-.8.1-1.2z"/></svg><span>Settings</span></button>
     </nav>
     <div class="sidebar-foot">
@@ -296,6 +352,7 @@
       <button data-tab="tunnel">Tunnel</button>
       <button data-tab="setup">Setup</button>
       <button data-tab="logs">Logs</button>
+      <button data-tab="update">Update</button>
       <button data-tab="settings">Settings</button>
     </div>
     <main class="page">
@@ -321,17 +378,18 @@
             <div class="kpi-val" id="kpiPing">N/A</div>
             <div class="kpi-sub" id="kpiPingSub">—</div>
           </div>
-          <div class="tunnel-card dash-span">
+          <div class="tunnel-card dash-span chart-card" id="chartCard">
             <div class="chart-head">
-              <div><p class="tc-title">Total Traffic &amp; Activity</p><div class="qs-hint" id="chartHint">Throughput over time (from interface counters)</div></div>
+              <div><p class="chart-title">Total Traffic &amp; Activity</p><div class="chart-sub" id="chartHint">Throughput volume and packet metrics over time</div></div>
               <div class="chart-filters" role="group" aria-label="Range">
-                <button data-range="7d" aria-pressed="true">7D</button>
+                <button data-range="24h" aria-pressed="true">24H</button>
+                <button data-range="7d" aria-pressed="false">7D</button>
                 <button data-range="30d" aria-pressed="false">30D</button>
-                <button data-range="90d" aria-pressed="false">90D</button>
               </div>
             </div>
-            <canvas id="trafficChart" height="220"></canvas>
-            <div class="chart-legend"><span><i class="sw" style="background:#38bdf8"></i>Download</span><span><i class="sw" style="background:#a78bfa"></i>Upload</span></div>
+            <div class="chart-down hidden" id="chartDown">🔴 Tunnel is down — no live traffic. History below is stale until the tunnel comes back up.</div>
+            <canvas id="trafficChart" height="260"></canvas>
+            <div class="chart-legend"><span><i class="sw" style="background:#f4f4f5"></i>Download</span><span><i class="sw" style="background:rgba(244,244,245,.35)"></i>Upload</span></div>
             <div class="warnbox hidden" id="tunnelWarn"></div>
           </div>
           <div class="tunnel-card kpi">
@@ -435,13 +493,19 @@
           <pre id="logs" class="logs">(pick a service)</pre>
         </div>
       </section>
-      <section id="tab-settings" hidden>
+      <section id="tab-update" hidden>
         <div class="tunnel-card">
-          <div class="tc-header"><p class="tc-title">Panel version</p></div>
-          <div class="dash-rows" id="verRows">N/A</div>
-          <div><button class="hashem-btn hashem-btn-primary" id="updateBtn">Check &amp; Update</button></div>
-          <div class="qs-hint" id="updateMsg">—</div>
+          <div class="tc-header"><p class="tc-title">Panel update</p><span class="status-indicator" id="updDot"><span class="dot"></span><span id="updDotTxt">—</span></span></div>
+          <div class="ver-big" id="verCurrent">—</div>
+          <div class="qs-hint">Installed version</div>
+          <div id="verRowsUpd" style="display:grid;gap:0;margin-top:4px"></div>
+          <div class="qs-actions" style="margin-top:8px">
+            <button class="hashem-btn hashem-btn-primary" id="updateBtn">Check for updates</button>
+          </div>
+          <div class="qs-hint" id="updateMsg">Press Check to see if a newer release is available.</div>
         </div>
+      </section>
+      <section id="tab-settings" hidden>
         <div class="tunnel-card">
           <div class="tc-header"><p class="tc-title">Settings</p></div>
           <div class="fg"><label for="newPass">New panel password</label><input class="hashem-input" id="newPass" type="password"></div>
@@ -478,8 +542,9 @@ function showLogin() { $('login').classList.remove('hidden'); $('app').classList
 function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
 // tabs (sidebar + mobile nav)
 function goTab(name) {
-  ['dashboard','tunnel','setup','logs','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
+  ['dashboard','tunnel','setup','logs','update','settings'].forEach(t => { $('tab-'+t).hidden = t !== name; });
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  if (name === 'update') loadVersion();
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => goTab(b.dataset.tab));
 // theme (hashem-style: localStorage + data-t on html and body)
@@ -540,26 +605,31 @@ const fmtSecs = s => {
   return m + 'm';
 };
 const dr = (k, v) => `<div class="dr"><span class="k">${esc(k)}</span><span>${esc(v ?? NA)}</span></div>`;
-let dashRange = '7d';
+let dashRange = '24h';
 document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => {
   dashRange = b.dataset.range;
   document.querySelectorAll('[data-range]').forEach(x => x.setAttribute('aria-pressed', x === b));
   refreshDash();
 });
 // Throughput line chart (canvas, no deps): cumulative counters -> per-interval rate.
-function drawChart(hist) {
+// Style: premium dark chart — two soft-white series, hairline grid, glow on live line.
+function drawChart(hist, isDown) {
   const cv = $('trafficChart');
   if (!cv) return;
+  // Red state: tint the chart red and keep history visible underneath.
+  const C_DOWN = '#f87171', C_UP = 'rgba(248,113,113,.4)';
+  const C_DL = '#f4f4f5', C_UL = 'rgba(244,244,245,.38)';
+  const lineA = isDown ? C_DOWN : C_DL, lineB = isDown ? C_UP : C_UL;
   const dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth || cv.parentElement.clientWidth || 600, H = 220;
+  const W = cv.clientWidth || cv.parentElement.clientWidth || 600, H = 260;
   cv.width = W * dpr; cv.height = H * dpr;
   const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, W, H);
-  const padL = 8, padR = 8, padT = 12, padB = 22;
+  const padL = 46, padR = 10, padT = 14, padB = 24;
   const iw = W - padL - padR, ih = H - padT - padB;
   const pts = (hist || []).filter(p => p.t != null);
   if (pts.length < 2) {
-    ctx.fillStyle = '#71717a'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = '12px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(pts.length === 0 ? 'No history yet — collecting every 5s while the panel runs' : 'Collecting… need at least 2 samples', W/2, H/2);
     return;
   }
@@ -575,46 +645,66 @@ function drawChart(hist) {
   }
   const vals = series.filter(Boolean);
   if (!vals.length) {
-    ctx.fillStyle = '#71717a'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = '12px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Waiting for traffic…', W/2, H/2);
     return;
   }
   let max = 0;
   vals.forEach(p => { max = Math.max(max, p.down, p.up); });
-  max = max * 1.15 || 1;
+  max = max * 1.2 || 1;
+  // nice ceiling (1/2/5 × 10^n)
+  { const p = Math.pow(10, Math.floor(Math.log10(max))); const n = max / p;
+    max = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
   const X = i => padL + (i / (series.length - 1 || 1)) * iw;
   const Y = v => padT + ih - (v / max) * ih;
-  // gridlines (3)
-  ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1;
-  ctx.fillStyle = '#71717a'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
-  for (let g = 0; g <= 3; g++) {
-    const y = padT + ih * g / 3, val = max * (1 - g / 3);
+  // gridlines (4) + y labels
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.font = '10.5px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'left';
+  for (let g = 0; g <= 4; g++) {
+    const y = Math.round(padT + ih * g / 4) + .5, val = max * (1 - g / 4);
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-    ctx.fillText(fmtRate(val), padL + 2, y - 3);
+    ctx.fillText(fmtRate(val), 4, y + 3);
   }
-  const line = (key, color, fill) => {
+  // x labels: evenly spaced date ticks (never overlap)
+  const fmtTick = t => { const d = new Date(t * 1000);
+    const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+    return dashRange === '24h'
+      ? String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0')
+      : M + ' ' + d.getDate(); };
+  const approxLabel = 64, nTicks = Math.max(2, Math.min(6, Math.floor(iw / approxLabel)));
+  ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.font = '10.5px -apple-system, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (let k = 0; k < nTicks; k++) {
+    const x = padL + iw * k / (nTicks - 1);
+    const idx = Math.round((pts.length - 1) * k / (nTicks - 1));
+    ctx.fillText(fmtTick(pts[idx].t), Math.min(Math.max(x, padL + 20), W - padR - 20), H - 7);
+  }
+  const line = (key, color, glow, fill) => {
     ctx.beginPath();
-    let started = false;
+    let started = false, lastX = 0, lastY = 0;
     series.forEach((p, i) => {
       if (!p) { started = false; return; }
       const x = X(i), y = Y(p[key]);
       if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      lastX = x; lastY = y;
     });
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 8; }
+    ctx.stroke(); ctx.shadowBlur = 0;
     if (fill) {
-      ctx.lineTo(X(series.length - 1), padT + ih); ctx.lineTo(X(0), padT + ih); ctx.closePath();
+      ctx.lineTo(lastX || X(series.length - 1), padT + ih); ctx.lineTo(X(0), padT + ih); ctx.closePath();
       const gr = ctx.createLinearGradient(0, padT, 0, padT + ih);
-      gr.addColorStop(0, color + '44'); gr.addColorStop(1, color + '00');
+      gr.addColorStop(0, color.replace(/[\d.]+\)$/, '0.14)').replace('#f4f4f5', 'rgba(244,244,245,0.14)').replace('#f87171', 'rgba(248,113,113,0.14)'));
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = gr; ctx.fill();
+    } else {
+      // end dot on upload line
+      ctx.beginPath(); ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
     }
   };
-  line('down', '#38bdf8', true);
-  line('up', '#a78bfa', false);
-  // x labels: first / mid / last timestamps
-  const fmtT = t => { const d = new Date(t * 1000); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
-  ctx.fillStyle = '#71717a'; ctx.font = '10px sans-serif';
-  ctx.textAlign = 'left'; ctx.fillText(fmtT(pts[0].t), padL, H - 6);
-  ctx.textAlign = 'right'; ctx.fillText(fmtT(pts[pts.length-1].t), W - padR, H - 6);
+  line('up', lineB, false, false);   // upload behind
+  line('down', lineA, !isDown, true); // download front, glowing when live
 }
 async function refreshDash() {
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
@@ -638,7 +728,10 @@ async function refreshDash() {
     const t = d.traffic || {};
     set('kpiTraffic', fmtBytes(t.total));
     set('kpiTrafficSub', '↑ ' + fmtBytes(t.up) + '  ·  ↓ ' + fmtBytes(t.down));
-    drawChart(d.history);
+    drawChart(d.history, !on);
+    const cd = $('chartDown'), cc = $('chartCard');
+    if (cd) cd.classList.toggle('hidden', on);
+    if (cc) cc.classList.toggle('is-down', !on);
     const w = $('tunnelWarn');
     if (w) {
       if (!on) { w.innerHTML = '⚠️ <b>Tunnel is not running.</b> Go to Setup to configure GRE + FRP, or check the Tunnel tab.'; w.classList.remove('hidden'); }
@@ -932,19 +1025,46 @@ $('savePass').onclick = async () => {
 async function loadVersion() {
   try {
     const v = await api('/api/version');
-    $('verRows').innerHTML = '<div><span class="k">Current</span><span>' + esc(v.current) + '</span></div>'
-      + '<div><span class="k">Latest</span><span>' + esc(v.latest || 'unknown') + '</span></div>'
-      + '<div><span class="k">Status</span><span>' + (v.update_available ? 'update available' : 'up to date') + '</span></div>';
-    $('updateBtn').disabled = !v.update_available;
-    $('updateMsg').textContent = v.update_available ? 'A newer release (' + v.latest + ') is available.' : 'You are on the latest release.';
-  } catch(e) { $('verRows').textContent = 'N/A'; $('updateMsg').textContent = e.message; }
+    const cur = $('verCurrent'); if (cur) cur.textContent = v.current || '—';
+    const rows = $('verRowsUpd');
+    if (rows) rows.innerHTML = '<div class="ver-row"><span class="k">Latest release</span><span>' + esc(v.latest || 'unknown') + '</span></div>'
+      + '<div class="ver-row"><span class="k">Status</span><span>' + (v.update_available ? '<span class="badge info"><span class="dot"></span>update available</span>' : '<span class="badge ok"><span class="dot"></span>up to date</span>') + '</span></div>';
+    const badge = $('updBadge'); if (badge) badge.classList.toggle('hidden', !v.update_available);
+    const dot = $('updDot');
+    if (dot) { dot.className = 'status-indicator ' + (v.update_available ? 'offline' : 'active'); $('updDotTxt').textContent = v.update_available ? 'update available' : 'up to date'; }
+    const btn = $('updateBtn');
+    if (v.update_available) { btn.disabled = false; btn.textContent = 'Update to ' + v.latest; }
+    else { btn.disabled = true; btn.textContent = 'Check for updates'; }
+    $('updateMsg').textContent = v.update_available ? 'A newer release (' + v.latest + ') is ready. Press Update to install it here.' : 'You are on the latest release.';
+  } catch(e) {
+    const rows = $('verRowsUpd'); if (rows) rows.textContent = 'N/A';
+    $('updateMsg').textContent = 'Check failed — will retry. (' + e.message + ')';
+    // Auto-retry once after 5s so a transient GitHub hiccup doesn't stick.
+    setTimeout(async () => { try { await api('/api/status'); loadVersion(); } catch(_){} }, 5000);
+  }
 }
 $('updateBtn').onclick = async () => {
+  const btn = $('updateBtn');
+  // First click = check; second click (when update known) = install.
+  if (btn.disabled) return;
+  if (/^Check/.test(btn.textContent)) { btn.disabled = true; btn.textContent = 'Checking…'; loadVersion(); setTimeout(() => { if (/^Checking/.test(btn.textContent)) { btn.disabled = false; btn.textContent = 'Check for updates'; } }, 8000); return; }
   if (!confirm('Update panel to the latest release? The panel will restart (a few seconds downtime). Tunnel services keep running.')) return;
-  $('updateBtn').disabled = true;
-  $('updateMsg').textContent = 'Updating… the panel will restart. Wait ~10s then refresh this page.';
-  try { const r = await api('/api/update', {}); $('updateMsg').textContent = (r.detail || 'updated'); toast('update started'); }
-  catch(e) { $('updateMsg').textContent = e.message; toast(e.message); $('updateBtn').disabled = false; }
+  btn.disabled = true;
+  $('updateMsg').textContent = 'Updating… the panel will restart. This page refreshes automatically.';
+  try {
+    const r = await api('/api/update', {});
+    $('updateMsg').textContent = (r.detail || 'updated') + ' — refreshing…';
+    toast('update started');
+    // Poll health until the new binary is up, then reload (max ~60s).
+    let n = 0;
+    const iv = setInterval(async () => {
+      n++;
+      try { const h = await (await fetch(at('/api/health'), {cache: 'no-store'})).json(); if (h && h.status === 'ok') { clearInterval(iv); location.reload(); } }
+      catch(_){}
+      if (n > 30) { clearInterval(iv); $('updateMsg').textContent = 'Update sent — if this page does not refresh, reload it manually in ~20s.'; }
+    }, 2000);
+  }
+  catch(e) { $('updateMsg').textContent = e.message; toast(e.message); btn.disabled = false; }
 };
 // boot: if already logged in, status works; else show login
 (async () => {
