@@ -30,21 +30,13 @@ type panelConfig struct {
 	BasePath string `json:"base_path"`
 }
 
-type peerConfig struct {
-	Addr string `json:"addr"`
-	User string `json:"user"`
-	Pass string `json:"pass"`
-}
-
 var (
 	cfg   panelConfig
-	peer  peerConfig
 	mu    sync.Mutex
 	nonce [32]byte
 )
 
 func cfgPath() string { return filepath.Join(configDir, "panel.json") }
-func peerPath() string { return filepath.Join(configDir, "peer.json") }
 
 func loadOrInit() {
 	_ = os.MkdirAll(configDir, 0700)
@@ -101,19 +93,11 @@ func randomBase(n int) string {
 	return string(b)
 }
 
-func loadPeer() {
-	data, err := os.ReadFile(peerPath())
-	if err == nil {
-		_ = json.Unmarshal(data, &peer)
-	}
-}
-
 func main() {
 	if v := os.Getenv("GRE_PANEL_DIR"); v != "" {
 		configDir = v
 	}
 	loadOrInit()
-	loadPeer()
 	if _, err := rand.Read(nonce[:]); err != nil {
 		log.Fatal(err)
 	}
@@ -126,8 +110,6 @@ func main() {
 	mux.HandleFunc("POST "+base+"/api/logout", handleLogout)
 	mux.HandleFunc("GET "+base+"/api/logs", requireAuth(handleLogs))
 	mux.HandleFunc("POST "+base+"/api/action", requireAuth(handleAction))
-	mux.HandleFunc("GET "+base+"/api/peer", requireAuth(handlePeerGet))
-	mux.HandleFunc("POST "+base+"/api/peer", requireAuth(handlePeerSet))
 	mux.HandleFunc("POST "+base+"/api/password", requireAuth(handlePassword))
 	mux.HandleFunc("GET "+base+"/api/setup", requireAuth(handleSetupGet))
 	mux.HandleFunc("POST "+base+"/api/setup", requireAuth(handleSetupPost))
@@ -238,14 +220,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// status of GRE + FRP on this machine, plus remote peer if configured.
+// status of GRE + FRP on this machine.
 func handleStatus(w http.ResponseWriter, r *http.Request) {
-	local := localStatus()
-	out := map[string]any{"local": local}
-	if peer.Addr != "" {
-		out["peer"] = remoteStatus()
-	}
-	writeJSON(w, out)
+	writeJSON(w, map[string]any{"local": localStatus()})
 }
 
 func handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -312,29 +289,6 @@ func runAction(action string) (string, error) {
 		return string(out), err
 	}
 	return "", fmt.Errorf("unknown action")
-}
-
-func handlePeerGet(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
-	writeJSON(w, map[string]string{"addr": peer.Addr, "user": peer.User})
-}
-
-func handlePeerSet(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Addr string `json:"addr"`
-		User string `json:"user"`
-		Pass string `json:"pass"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Addr) == "" {
-		http.Error(w, "peer address is required", http.StatusBadRequest)
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	peer = peerConfig{Addr: strings.TrimSpace(body.Addr), User: body.User, Pass: body.Pass}
-	_ = os.WriteFile(peerPath(), mustJSON(peer), 0600)
-	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 // ---- local inspection (reads systemd + ip, never writes except via actions) ----
@@ -462,48 +416,4 @@ func grePeerInner(cidr string) string {
 		last++
 	}
 	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], last)
-}
-
-// remoteStatus asks the peer panel for its status over its secret path.
-func remoteStatus() any {
-	mu.Lock()
-	p := peer
-	mu.Unlock()
-	if p.Addr == "" {
-		return map[string]string{"error": "peer not configured"}
-	}
-	base := strings.TrimRight(p.Addr, "/")
-	// login to peer panel, then fetch status — best effort, short timeouts
-	client := &http.Client{Timeout: 8 * time.Second}
-	// NOTE: peer.Addr must include the secret base path, e.g.
-	// http://10.10.10.1:7777/<secret>
-	loginBody := fmt.Sprintf(`{"username":%q,"password":%q}`, p.User, p.Pass)
-	resp, err := client.Post(base+"/api/login", "application/json", strings.NewReader(loginBody))
-	if err != nil {
-		return map[string]string{"error": "peer unreachable: " + err.Error()}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return map[string]string{"error": "peer login failed"}
-	}
-	var session string
-	for _, c := range resp.Cookies() {
-		if c.Name == "gre_session" {
-			session = c.Value
-		}
-	}
-	req, _ := http.NewRequest("GET", base+"/api/status", nil)
-	if session != "" {
-		req.AddCookie(&http.Cookie{Name: "gre_session", Value: session})
-	}
-	r2, err := client.Do(req)
-	if err != nil {
-		return map[string]string{"error": "peer status failed: " + err.Error()}
-	}
-	defer r2.Body.Close()
-	var out any
-	if err := json.NewDecoder(r2.Body).Decode(&out); err != nil {
-		return map[string]string{"error": "peer bad response"}
-	}
-	return out
 }

@@ -10,38 +10,97 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="base.css">
 <style>
-  :root { --ok:#34c759; --warn:#ff9f0a; --bad:#ff453a; --card:rgba(255,255,255,.06); }
+  :root {
+    color-scheme: light dark;
+    --ok:#30d158; --warn:#ff9f0a; --bad:#ff453a;
+    --accent:#0a84ff;
+    --bg:#f2f2f7; --bg-elev:#ffffff;
+    --card:#ffffff; --card-border:rgba(0,0,0,.06);
+    --txt:#1c1c1e; --txt-sub:#636366; --muted:#8e8e93;
+    --row-sep:rgba(0,0,0,.06);
+    --field:#ffffff; --field-border:rgba(0,0,0,.12);
+    --ghost:#e9e9ee; --ghost-txt:#0a84ff;
+    --term:#1c1c1e;
+    --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+    --radius:16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ok:#30d158; --warn:#ff9f0a; --bad:#ff453a;
+      --accent:#0a84ff;
+      --bg:#0a0e17; --bg-elev:#141824;
+      --card:rgba(255,255,255,.055); --card-border:rgba(255,255,255,.1);
+      --txt:#f2f2f7; --txt-sub:#98989f; --muted:#8e8e93;
+      --row-sep:rgba(255,255,255,.07);
+      --field:rgba(255,255,255,.07); --field-border:rgba(255,255,255,.14);
+      --ghost:rgba(255,255,255,.12); --ghost-txt:#fff;
+      --term:#000;
+      --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.5 -apple-system,system-ui,"SF Pro Text",Inter,sans-serif;
-    background:#0a0e17; color:#f2f2f7; min-height:100vh; }
-  header { display:flex; align-items:center; gap:12px; padding:16px 20px;
-    border-bottom:1px solid rgba(255,255,255,.1); position:sticky; top:0;
-    background:rgba(10,14,23,.9); backdrop-filter:blur(12px); }
-  header h1 { font-size:17px; margin:0; font-weight:600; }
-  header .sub { color:#8e8e93; font-size:12px; }
-  main { max-width:860px; margin:0 auto; padding:20px; display:grid; gap:16px; }
-  .card { background:var(--card); border:1px solid rgba(255,255,255,.1);
-    border-radius:12px; padding:16px; }
-  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em;
-    color:#8e8e93; margin:0 0 12px; }
-  .row { display:flex; justify-content:space-between; gap:8px; padding:6px 0;
-    border-bottom:1px solid rgba(255,255,255,.06); }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",sans-serif;
+    background:var(--bg); color:var(--txt); min-height:100vh;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px;
+    border-bottom:1px solid var(--card-border); position:sticky; top:0; z-index:10;
+    background:color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter:saturate(1.6) blur(20px); -webkit-backdrop-filter:saturate(1.6) blur(20px); }
+  .brand { width:34px; height:34px; border-radius:10px; flex:none;
+    background:linear-gradient(135deg,#0284c7,#2563eb);
+    display:grid; place-items:center; box-shadow:0 2px 8px rgba(2,132,199,.35); }
+  header h1 { font-size:20px; margin:0; font-weight:700; letter-spacing:-.02em; }
+  header .sub { color:var(--txt-sub); font-size:12.5px; margin-top:1px; }
+  main { max-width:720px; margin:0 auto; padding:20px 16px 48px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--card-border);
+    border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); }
+  .card h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--muted); margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:9px 0; border-bottom:1px solid var(--row-sep); font-size:14.5px; }
   .row:last-child { border-bottom:0; }
-  .k { color:#98989f; } .v { font-variant-numeric:tabular-nums; text-align:right; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
-  .up { background:var(--ok); } .down { background:var(--bad); } .warn { background:var(--warn); }
-  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .k { color:var(--txt-sub); flex:none; } .v { font-variant-numeric:tabular-nums; text-align:right; font-weight:500; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px;
+    box-shadow:0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
+  .up { background:var(--ok); color:var(--ok); } .down { background:var(--bad); color:var(--bad); } .warn { background:var(--warn); color:var(--warn); }
+  .seg { display:flex; gap:0; background:var(--ghost); border-radius:12px; padding:3px; margin:0 0 14px; }
+  .seg button { flex:1; background:transparent; color:var(--txt-sub); border:0; border-radius:9px;
+    padding:0 10px; min-height:36px; font-size:14px; font-weight:500; cursor:pointer; box-shadow:none; }
+  .seg button[aria-pressed="true"] { background:var(--bg-elev); color:var(--txt);
+    box-shadow:0 1px 4px rgba(0,0,0,.18); font-weight:600; }
+  .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
   button, input { font:inherit; }
-  button { background:#0a84ff; color:#fff; border:0; border-radius:8px;
-    padding:8px 14px; min-height:36px; cursor:pointer; }
-  button.ghost { background:rgba(255,255,255,.1); }
+  button { background:var(--accent); color:#fff; border:0; border-radius:12px;
+    padding:0 18px; min-height:44px; font-size:15px; font-weight:600; cursor:pointer;
+    box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
+    transition:transform .15s ease, opacity .15s ease, box-shadow .15s ease; touch-action:manipulation; }
+  button:hover { opacity:.94; } button:active { transform:scale(.98); }
+  button.ghost { background:var(--ghost); color:var(--ghost-txt); box-shadow:none; }
+  @media (prefers-color-scheme: light) { button.ghost { color:var(--accent); } }
   button.danger { background:var(--bad); }
-  button:disabled { opacity:.5; }
-  input { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
-    border-radius:8px; padding:8px 10px; color:#fff; width:100%; }
-  label { display:grid; gap:4px; font-size:12px; color:#98989f; margin-bottom:8px; }
-  pre { background:#000; border-radius:8px; padding:12px; overflow:auto;
-    max-height:300px; font-size:12px; }
+  button:disabled { opacity:.45; }
+  input { background:var(--field); border:1px solid var(--field-border);
+    border-radius:10px; padding:11px 12px; color:var(--txt); width:100%; font-size:15px;
+    transition:border-color .15s, box-shadow .15s; }
+  input::placeholder { color:var(--muted); }
+  input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); outline:none; }
+  label { display:grid; gap:6px; font-size:13px; font-weight:500; color:var(--txt-sub); margin-bottom:10px; }
+  pre { background:var(--term); color:#e8e8ed; border-radius:12px; padding:14px; overflow:auto;
+    max-height:320px; font-size:12.5px; line-height:1.6;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
+  @media (prefers-color-scheme: light) { pre { color:#f2f2f7; } }
+  .note { font-size:13px; color:var(--txt-sub); background:color-mix(in srgb, var(--accent) 8%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius:12px; padding:10px 12px; margin:0 0 12px; }
+  .warnbox { background:rgba(255,159,10,.12); border:1px solid rgba(255,159,10,.45);
+    border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:13.5px; }
+  .tokenbox { background:rgba(48,209,88,.1); border:1px solid rgba(48,209,88,.45);
+    border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:13.5px; word-break:break-all; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:480px) { .grid2 { grid-template-columns:1fr; } main { padding:16px 12px 40px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none!important; transition:none!important; } }
   #login { position:fixed; inset:0; z-index:50; display:grid; place-items:center;
     background:#09090b; color:#f4f4f5; min-height:100dvh; overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
@@ -141,14 +200,15 @@
 
 <div id="app" class="hidden">
 <header>
-  <div><h1>GRE-FRP Panel</h1><div class="sub" id="roleLine">—</div></div>
+  <div class="brand" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 100 100" fill="none"><path d="M50 48 C42 38 26 32 12 42 C4 48 1 56 3 62 C6 60 12 54 20 55 C32 56 42 60 50 52 C58 60 68 56 80 55 C88 54 94 60 97 62 C99 56 96 48 88 42 C74 32 58 38 50 48 Z" fill="#fff"/></svg></div>
+  <div><h1>GRE-FRP</h1><div class="sub" id="roleLine">—</div></div>
   <div style="margin-left:auto" class="btns">
     <button class="ghost" id="refreshBtn">Refresh</button>
     <button class="ghost" id="logoutBtn">Logout</button>
   </div>
 </header>
 <main>
-  <div class="card"><h2>Tunnel</h2><div id="tunnel"></div>
+  <div class="card"><h2>Status</h2><div id="tunnel"></div>
     <div class="btns">
       <button class="ghost" data-act="ping">Ping peer</button>
       <button class="ghost" data-act="restart-gre">Restart GRE</button>
@@ -157,39 +217,31 @@
     </div>
     <pre id="actOut" class="hidden"></pre>
   </div>
-  <div class="card" id="setupCard"><h2>Setup tunnel (this side only)</h2>
-    <div class="btns" style="margin:0 0 12px">
-      <button class="ghost" id="roleIran">🇮🇷 Iran (GRE + frps)</button>
-      <button class="ghost" id="roleForeign">🌍 Foreign (GRE + frpc)</button>
+  <div class="card" id="setupCard"><h2>Setup tunnel</h2>
+    <div class="seg" role="group" aria-label="Server role">
+      <button id="roleIran" aria-pressed="true">🇮🇷 Iran</button>
+      <button id="roleForeign" aria-pressed="false">🌍 Foreign</button>
     </div>
-    <div id="setupWarn" class="hidden" style="background:rgba(255,159,10,.12);border:1px solid rgba(255,159,10,.4);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px"></div>
+    <div id="setupWarn" class="warnbox hidden"></div>
     <input type="hidden" id="sRole" value="iran">
     <label>Local public IP (auto-detected, editable)<input id="sLocalPub" inputmode="decimal"></label>
     <label>Remote public IP (the other server)<input id="sRemotePub" inputmode="decimal" placeholder="e.g. 203.0.113.10"></label>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <label>Local GRE IP<input id="sLocalGre"></label>
-      <label>Peer GRE IP<input id="sPeerGre"></label>
+    <div class="grid2">
+      <label>Local GRE IP<input id="sLocalGre" inputmode="decimal"></label>
+      <label>Peer GRE IP<input id="sPeerGre" inputmode="decimal"></label>
     </div>
     <label>FRP port<input id="sFrpPort" inputmode="numeric"></label>
-    <div id="iranBox">
-      <p style="font-size:12px;color:#98989f">Token is auto-generated. After setup, copy it to the Foreign side.</p>
-    </div>
+    <div id="iranBox"><p class="note">Token is auto-generated. After setup, copy it to the Foreign side.</p></div>
     <div id="foreignBox" class="hidden">
       <label>Token (from Iran side)<input id="sToken" autocomplete="off"></label>
       <label>Reverse ports (comma-separated)<input id="sPorts" placeholder="443, 2083, 8080"></label>
     </div>
-    <div id="setupToken" class="hidden" style="background:rgba(52,199,89,.1);border:1px solid rgba(52,199,89,.4);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;word-break:break-all"></div>
+    <div id="setupToken" class="tokenbox hidden"></div>
     <div class="btns">
       <button id="setupBtn">Apply setup</button>
       <button class="ghost hidden" id="setupForceBtn">Overwrite anyway</button>
     </div>
     <pre id="setupOut" class="hidden"></pre>
-  </div>
-  <div class="card"><h2>Peer (Turkey)</h2><div id="peerBox"></div>
-    <label>Peer panel URL (with secret path)<input id="peerAddr" placeholder="http://10.10.10.1:7777/SECRET"></label>
-    <label>User<input id="peerUser" value="admin"></label>
-    <label>Password<input id="peerPass" type="password"></label>
-    <button id="savePeer">Save peer</button>
   </div>
   <div class="card"><h2>Logs</h2>
     <div class="btns">
@@ -240,19 +292,10 @@ function renderTunnel(st) {
     <div class="row"><span class="k">FRP port</span><span class="v">${esc(st.frp_port || st.bind_port || '?')}</span></div>
     <div class="row"><span class="k">Proxies</span><span class="v">${esc((st.proxies || []).join(', ') || '—')}</span></div>`;
 }
-function renderPeer(p) {
-  if (!p || p.error) { $('peerBox').innerHTML = `<div class="row"><span class="k">status</span><span class="v">${esc((p && p.error) || 'not configured')}</span></div>`; return; }
-  const l = (p.local) || {};
-  $('peerBox').innerHTML = `
-    <div class="row"><span class="k">role</span><span class="v">${esc(l.role || '?')}</span></div>
-    <div class="row"><span class="k">GRE</span><span class="v">${dot(l.gre && l.gre.exists)}${esc((l.gre && l.gre.inner) || '')}</span></div>
-    <div class="row"><span class="k">FRP</span><span class="v">${dot(l.frp_up)}${esc(l.frp_svc || '')}</span></div>`;
-}
 async function refresh() {
   try {
     const s = await api('/api/status');
-    renderTunnel(s.local); renderPeer(s.peer);
-    try { const p = await api('/api/peer'); $('peerAddr').value = p.addr || ''; $('peerUser').value = p.user || 'admin'; } catch(e) {}
+    renderTunnel(s.local);
   } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
 }
 // ---- setup form ----
@@ -261,8 +304,8 @@ function setRole(role) {
   const iran = role === 'iran';
   $('iranBox').classList.toggle('hidden', !iran);
   $('foreignBox').classList.toggle('hidden', iran);
-  $('roleIran').style.outline = iran ? '2px solid #0a84ff' : '';
-  $('roleForeign').style.outline = !iran ? '2px solid #0a84ff' : '';
+  $('roleIran').setAttribute('aria-pressed', iran);
+  $('roleForeign').setAttribute('aria-pressed', !iran);
   if (iran) { $('sLocalGre').value = '10.10.10.2'; $('sPeerGre').value = '10.10.10.1'; }
   else { $('sLocalGre').value = '10.10.10.1'; $('sPeerGre').value = '10.10.10.2'; }
 }
@@ -468,10 +511,6 @@ document.querySelectorAll('[data-log]').forEach(b => b.onclick = async () => {
   try { const r = await fetch(at('/api/logs?svc=' + b.dataset.log)); $('logs').textContent = (await r.json()).logs; }
   catch(e) { toast(e.message); }
 });
-$('savePeer').onclick = async () => {
-  try { await api('/api/peer', {addr: $('peerAddr').value.trim(), user: $('peerUser').value.trim(), pass: $('peerPass').value}); toast('peer saved'); refresh(); }
-  catch(e) { toast(e.message); }
-};
 $('savePass').onclick = async () => {
   try { await api('/api/password', {password: $('newPass').value}); $('newPass').value=''; toast('password changed'); }
   catch(e) { toast(e.message); }
