@@ -39,7 +39,11 @@ func authed(r *http.Request) bool {
 	}
 	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
 	want := hex.EncodeToString(mac[:])
-	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(want)) == 1
+	if subtle.ConstantTimeCompare([]byte(c.Value), []byte(want)) == 1 {
+		return true
+	}
+	// persistent server-side sessions (survive restarts, 30d sliding)
+	return validSession(c.Value)
 }
 
 func requireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -69,11 +73,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
-	http.SetCookie(w, sessionCookie(hex.EncodeToString(mac[:]), 86400*7))
+	tok := hex.EncodeToString(mac[:])
+	addSession(tok) // persistent: survives restarts, 30d sliding expiry
+	http.SetCookie(w, sessionCookie(tok, 86400*30))
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie("gre_session"); err == nil {
+		dropSession(c.Value)
+	}
 	http.SetCookie(w, sessionCookie("", -1))
 	writeJSON(w, map[string]string{"status": "ok"})
 }
@@ -87,17 +96,22 @@ func handlePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mu.Lock()
-	defer mu.Unlock()
 	h := sha256.Sum256([]byte(body.Password))
 	cfg.PassHash = hex.EncodeToString(h[:])
 	_ = os.WriteFile(cfgPath(), mustJSON(cfg), 0600)
 	// keep plaintext copy in sync (user choice: viewable via script menu)
 	_ = os.WriteFile(filepath.Join(configDir, "panel.pass"), []byte(body.Password), 0600)
 	if _, err := rand.Read(nonce[:]); err != nil {
+		mu.Unlock()
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	mu.Unlock()
+	// password change invalidates all other sessions (user choice).
+	dropAllSessions()
 	mac := sha256.Sum256(append(nonce[:], []byte(cfg.PassHash)...))
-	http.SetCookie(w, sessionCookie(hex.EncodeToString(mac[:]), 86400*7))
+	tok := hex.EncodeToString(mac[:])
+	addSession(tok) // keep the changer logged in
+	http.SetCookie(w, sessionCookie(tok, 86400*30))
 	writeJSON(w, map[string]string{"status": "ok"})
 }

@@ -335,6 +335,12 @@
       </section>
       <section id="tab-settings" hidden>
         <div class="tunnel-card">
+          <div class="tc-header"><p class="tc-title">Panel version</p></div>
+          <div class="dash-rows" id="verRows">N/A</div>
+          <div><button class="hashem-btn hashem-btn-primary" id="updateBtn">Check &amp; Update</button></div>
+          <div class="qs-hint" id="updateMsg">—</div>
+        </div>
+        <div class="tunnel-card">
           <div class="tc-header"><p class="tc-title">Settings</p></div>
           <div class="fg"><label for="newPass">New panel password</label><input class="hashem-input" id="newPass" type="password"></div>
           <div><button class="hashem-btn hashem-btn-primary" id="savePass">Change password</button></div>
@@ -525,7 +531,7 @@ function doLogin() {
     try {
       await api('/api/login', {username: $('u').value, password: $('p').value});
       $('p').value = ''; $('loginErr').textContent = '';
-      showApp(); refresh(); loadSetupDefaults();
+      showApp(); refresh(); loadSetupDefaults(); loadVersion();
     } catch(e) { $('loginErr').textContent = e.message; }
   })();
 }
@@ -682,9 +688,26 @@ $('savePass').onclick = async () => {
   try { await api('/api/password', {password: $('newPass').value}); $('newPass').value=''; toast('password changed'); }
   catch(e) { toast(e.message); }
 };
+async function loadVersion() {
+  try {
+    const v = await api('/api/version');
+    $('verRows').innerHTML = '<div><span class="k">Current</span><span>' + esc(v.current) + '</span></div>'
+      + '<div><span class="k">Latest</span><span>' + esc(v.latest || 'unknown') + '</span></div>'
+      + '<div><span class="k">Status</span><span>' + (v.update_available ? 'update available' : 'up to date') + '</span></div>';
+    $('updateBtn').disabled = !v.update_available;
+    $('updateMsg').textContent = v.update_available ? 'A newer release (' + v.latest + ') is available.' : 'You are on the latest release.';
+  } catch(e) { $('verRows').textContent = 'N/A'; $('updateMsg').textContent = e.message; }
+}
+$('updateBtn').onclick = async () => {
+  if (!confirm('Update panel to the latest release? The panel will restart (a few seconds downtime). Tunnel services keep running.')) return;
+  $('updateBtn').disabled = true;
+  $('updateMsg').textContent = 'Updating… the panel will restart. Wait ~10s then refresh this page.';
+  try { const r = await api('/api/update', {}); $('updateMsg').textContent = (r.detail || 'updated'); toast('update started'); }
+  catch(e) { $('updateMsg').textContent = e.message; toast(e.message); $('updateBtn').disabled = false; }
+};
 // boot: if already logged in, status works; else show login
 (async () => {
-  try { await api('/api/status'); showApp(); refresh(); loadSetupDefaults(); }
+  try { await api('/api/status'); showApp(); refresh(); loadSetupDefaults(); loadVersion(); }
   catch(e) { showLogin(); }
 })();
 setInterval(() => { if (!$('app').classList.contains('hidden')) refresh(); }, 15000);

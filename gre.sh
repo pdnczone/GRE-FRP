@@ -667,21 +667,38 @@ save_panel_pass() {
 update_all() {
     echo -e "${CYAN}[*] Updating GRE-FRP (script + panel binary)...${NC}"
     TMP_U="$(mktemp -d)"
+    trap 'rm -rf "$TMP_U"' RETURN
     # 1. fresh script from main
     if ! curl -fsSL --max-time 30 "https://raw.githubusercontent.com/pdnczone/GRE-FRP/main/gre.sh" -o "$TMP_U/gre.sh"; then
-        echo -e "${RED}[!] Failed to download latest gre.sh${NC}"
-        rm -rf "$TMP_U"
+        echo -e "${RED}[!] Failed to download latest gre.sh — nothing changed.${NC}"
         return 1
     fi
-    bash -n "$TMP_U/gre.sh" || { echo -e "${RED}[!] Downloaded script failed syntax check${NC}"; rm -rf "$TMP_U"; return 1; }
+    bash -n "$TMP_U/gre.sh" || { echo -e "${RED}[!] Downloaded script failed syntax check — nothing changed.${NC}"; return 1; }
+    if cmp -s "$TMP_U/gre.sh" "$0" 2>/dev/null || cmp -s "$TMP_U/gre.sh" ./gre.sh 2>/dev/null; then
+        echo -e "${GREEN}[✔️] gre.sh is already the latest version.${NC}"
+    else
+        echo -e "${GREEN}[✔️] New gre.sh downloaded and syntax-checked.${NC}"
+    fi
     # 2. reinstall panel binary from latest release (downloads prebuilt, restarts service)
     echo -e "${CYAN}[*] Updating panel binary...${NC}"
-    install_panel || { echo -e "${RED}[!] Panel update failed${NC}"; rm -rf "$TMP_U"; return 1; }
+    # backup panel config so a failed update can be rolled back
+    PANEL_BAK=""
+    if [[ -f /etc/gre-panel/panel.json ]]; then
+        PANEL_BAK="$(mktemp -d)"
+        cp -a /etc/gre-panel/panel.json /etc/gre-panel/panel.pass "$PANEL_BAK/" 2>/dev/null || true
+    fi
+    if ! install_panel; then
+        echo -e "${RED}[!] Panel update failed — restoring previous config.${NC}"
+        [[ -n "$PANEL_BAK" ]] && cp -a "$PANEL_BAK/panel.json" "$PANEL_BAK/panel.pass" /etc/gre-panel/ 2>/dev/null || true
+        systemctl restart gre-panel 2>/dev/null || true
+        return 1
+    fi
+    [[ -n "$PANEL_BAK" ]] && rm -rf "$PANEL_BAK"
     # 3. replace running script only after everything succeeded
     cp "$TMP_U/gre.sh" "$0" 2>/dev/null || cp "$TMP_U/gre.sh" ./gre.sh
     chmod +x "$0" 2>/dev/null || true
-    rm -rf "$TMP_U"
-    echo -e "${GREEN}[✔️] Update complete — script + panel are latest. Re-run the script to use the new menu.${NC}"
+    PANEL_VER=$("$PANEL_BIN" --version 2>/dev/null || echo "unknown")
+    echo -e "${GREEN}[✔️] Update complete — script + panel are latest (panel: ${PANEL_VER}). Re-run the script to use the new menu.${NC}"
 }
 
 main_menu() {

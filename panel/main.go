@@ -30,7 +30,12 @@ type panelConfig struct {
 	BasePath string `json:"base_path"`
 }
 
-var cfg panelConfig
+var (
+	cfg panelConfig
+	// panelVersion is set at release build time:
+	// go build -ldflags "-X main.panelVersion=panel-rN"
+	panelVersion = "dev"
+)
 
 func cfgPath() string { return filepath.Join(configDir, "panel.json") }
 
@@ -90,6 +95,10 @@ func randomBase(n int) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
+		fmt.Println(panelVersion)
+		return
+	}
 	if v := os.Getenv("GRE_PANEL_DIR"); v != "" {
 		configDir = v
 	}
@@ -112,6 +121,8 @@ func main() {
 	mux.HandleFunc("POST "+base+"/api/action", requireAuth(handleAction))
 	mux.HandleFunc("POST "+base+"/api/password", requireAuth(handlePassword))
 	mux.HandleFunc("GET "+base+"/api/setup", requireAuth(handleSetupGet))
+	mux.HandleFunc("GET "+base+"/api/version", requireAuth(handleVersion))
+	mux.HandleFunc("POST "+base+"/api/update", requireAuth(handleUpdate))
 	mux.HandleFunc("POST "+base+"/api/setup", requireAuth(handleSetupPost))
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
