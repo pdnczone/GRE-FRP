@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-base="__BASE_PATH__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GRE-FRP Panel</title>
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0e17">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="base.css">
+<style>
+  :root { --ok:#34c759; --warn:#ff9f0a; --bad:#ff453a; --card:rgba(255,255,255,.06); }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 -apple-system,system-ui,"SF Pro Text",Inter,sans-serif;
+    background:#0a0e17; color:#f2f2f7; min-height:100vh; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 20px;
+    border-bottom:1px solid rgba(255,255,255,.1); position:sticky; top:0;
+    background:rgba(10,14,23,.9); backdrop-filter:blur(12px); }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .sub { color:#8e8e93; font-size:12px; }
+  main { max-width:860px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid rgba(255,255,255,.1);
+    border-radius:12px; padding:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+    color:#8e8e93; margin:0 0 12px; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:6px 0;
+    border-bottom:1px solid rgba(255,255,255,.06); }
+  .row:last-child { border-bottom:0; }
+  .k { color:#98989f; } .v { font-variant-numeric:tabular-nums; text-align:right; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+  .up { background:var(--ok); } .down { background:var(--bad); } .warn { background:var(--warn); }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button, input { font:inherit; }
+  button { background:#0a84ff; color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; min-height:36px; cursor:pointer; }
+  button.ghost { background:rgba(255,255,255,.1); }
+  button.danger { background:var(--bad); }
+  button:disabled { opacity:.5; }
+  input { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
+    border-radius:8px; padding:8px 10px; color:#fff; width:100%; }
+  label { display:grid; gap:4px; font-size:12px; color:#98989f; margin-bottom:8px; }
+  pre { background:#000; border-radius:8px; padding:12px; overflow:auto;
+    max-height:300px; font-size:12px; }
+  #login { max-width:340px; margin:15vh auto; }
+  .hidden { display:none !important; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#222; padding:10px 16px; border-radius:8px; }
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <div class="card">
+    <h2>GRE-FRP Panel</h2>
+    <label>Username<input id="u" autocomplete="username"></label>
+    <label>Password<input id="p" type="password" autocomplete="current-password"></label>
+    <button id="loginBtn" style="width:100%">Login</button>
+    <p id="loginErr" style="color:var(--bad)"></p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+<header>
+  <div><h1>GRE-FRP Panel</h1><div class="sub" id="roleLine">—</div></div>
+  <div style="margin-left:auto" class="btns">
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <button class="ghost" id="logoutBtn">Logout</button>
+  </div>
+</header>
+<main>
+  <div class="card"><h2>Tunnel</h2><div id="tunnel"></div>
+    <div class="btns">
+      <button class="ghost" data-act="ping">Ping peer</button>
+      <button class="ghost" data-act="restart-gre">Restart GRE</button>
+      <button class="ghost" data-act="restart-frps">Restart frps</button>
+      <button class="ghost" data-act="restart-frpc">Restart frpc</button>
+    </div>
+    <pre id="actOut" class="hidden"></pre>
+  </div>
+  <div class="card"><h2>Peer (Turkey)</h2><div id="peerBox"></div>
+    <label>Peer panel URL (with secret path)<input id="peerAddr" placeholder="http://10.10.10.1:7777/SECRET"></label>
+    <label>User<input id="peerUser" value="admin"></label>
+    <label>Password<input id="peerPass" type="password"></label>
+    <button id="savePeer">Save peer</button>
+  </div>
+  <div class="card"><h2>Logs</h2>
+    <div class="btns">
+      <button class="ghost" data-log="frps">frps</button>
+      <button class="ghost" data-log="frpc">frpc</button>
+    </div>
+    <pre id="logs">(pick a service)</pre>
+  </div>
+  <div class="card"><h2>Settings</h2>
+    <label>New panel password<input id="newPass" type="password"></label>
+    <button id="savePass">Change password</button>
+  </div>
+</main>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const BASE = document.documentElement.dataset.base || '';
+const at = p => BASE + p;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 2500);
+}
+async function api(path, body) {
+  const r = await fetch(at(path), {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json'} : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.status === 401) { showLogin(); throw new Error('session expired'); }
+  if (!r.ok) throw new Error(await r.text() || r.statusText);
+  return r.json();
+}
+function showLogin() { $('login').classList.remove('hidden'); $('app').classList.add('hidden'); }
+function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
+
+function dot(ok) { return `<span class="dot ${ok ? 'up' : 'down'}"></span>`; }
+function renderTunnel(st) {
+  $('roleLine').textContent = esc(st.role || 'unknown role');
+  $('tunnel').innerHTML = `
+    <div class="row"><span class="k">GRE interface</span><span class="v">${dot(st.gre.exists)}${esc(st.gre.name || 'gre-tunnel')} ${esc(st.gre.inner || '')}</span></div>
+    <div class="row"><span class="k">GRE path</span><span class="v">${esc(st.gre.local || '?')} → ${esc(st.gre.peer_ip || st.gre_peer || '?')}</span></div>
+    <div class="row"><span class="k">GRE ping</span><span class="v">${dot(st.ping_ok)}${esc(st.ping_ms || 'no answer')}</span></div>
+    <div class="row"><span class="k">FRP service</span><span class="v">${dot(st.frp_up)}${esc(st.frp_svc || 'none')}</span></div>
+    <div class="row"><span class="k">FRP port</span><span class="v">${esc(st.frp_port || st.bind_port || '?')}</span></div>
+    <div class="row"><span class="k">Proxies</span><span class="v">${esc((st.proxies || []).join(', ') || '—')}</span></div>`;
+}
+function renderPeer(p) {
+  if (!p || p.error) { $('peerBox').innerHTML = `<div class="row"><span class="k">status</span><span class="v">${esc((p && p.error) || 'not configured')}</span></div>`; return; }
+  const l = (p.local) || {};
+  $('peerBox').innerHTML = `
+    <div class="row"><span class="k">role</span><span class="v">${esc(l.role || '?')}</span></div>
+    <div class="row"><span class="k">GRE</span><span class="v">${dot(l.gre && l.gre.exists)}${esc((l.gre && l.gre.inner) || '')}</span></div>
+    <div class="row"><span class="k">FRP</span><span class="v">${dot(l.frp_up)}${esc(l.frp_svc || '')}</span></div>`;
+}
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    renderTunnel(s.local); renderPeer(s.peer);
+    try { const p = await api('/api/peer'); $('peerAddr').value = p.addr || ''; $('peerUser').value = p.user || 'admin'; } catch(e) {}
+  } catch(e) { if (!/session|expired|unauthorized/i.test(e.message)) toast(e.message); }
+}
+
+$('loginBtn').onclick = async () => {
+  try {
+    await api('/api/login', {username: $('u').value, password: $('p').value});
+    $('p').value = ''; $('loginErr').textContent = '';
+    showApp(); refresh();
+  } catch(e) { $('loginErr').textContent = e.message; }
+};
+$('logoutBtn').onclick = async () => { try { await api('/api/logout', {}); } catch(e){} showLogin(); };
+$('refreshBtn').onclick = refresh;
+document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+  b.disabled = true;
+  try {
+    const r = await api('/api/action', {action: b.dataset.act});
+    $('actOut').classList.remove('hidden');
+    $('actOut').textContent = r.output || 'ok';
+    refresh();
+  } catch(e) { toast(e.message); }
+  b.disabled = false;
+});
+document.querySelectorAll('[data-log]').forEach(b => b.onclick = async () => {
+  try { const r = await fetch(at('/api/logs?svc=' + b.dataset.log)); $('logs').textContent = (await r.json()).logs; }
+  catch(e) { toast(e.message); }
+});
+$('savePeer').onclick = async () => {
+  try { await api('/api/peer', {addr: $('peerAddr').value.trim(), user: $('peerUser').value.trim(), pass: $('peerPass').value}); toast('peer saved'); refresh(); }
+  catch(e) { toast(e.message); }
+};
+$('savePass').onclick = async () => {
+  try { await api('/api/password', {password: $('newPass').value}); $('newPass').value=''; toast('password changed'); }
+  catch(e) { toast(e.message); }
+};
+// boot: if already logged in, status works; else show login
+(async () => {
+  try { await api('/api/status'); showApp(); refresh(); }
+  catch(e) { showLogin(); }
+})();
+setInterval(() => { if (!$('app').classList.contains('hidden')) refresh(); }, 15000);
+</script>
+</body>
+</html>

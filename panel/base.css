@@ -1,0 +1,104 @@
+/* Shared utilities: the section label, the mono figure, the icon size.
+ * Ported verbatim from the approved preview — the design that was signed
+ * off, not a re-drawing of it. Class names are kept so the markup matches.
+ */
+
+  /* Typography scale defaults — normalized rem-based scale */
+  h1 { font-size: var(--fs-h1); line-height: var(--lh-h1); font-weight: var(--fw-h1); color: var(--tx); letter-spacing: -0.025em; }
+  h2 { font-size: var(--fs-h2); line-height: var(--lh-h2); font-weight: var(--fw-h2); color: var(--tx); letter-spacing: -0.02em; }
+  h3 { font-size: var(--fs-h3); line-height: var(--lh-h3); font-weight: var(--fw-h3); color: var(--tx); letter-spacing: -0.015em; }
+  h4 { font-size: var(--fs-h4); line-height: var(--lh-h4); font-weight: var(--fw-h4); color: var(--tx); letter-spacing: -0.01em; }
+  p { font-size: var(--fs-body); line-height: var(--lh-body); color: var(--tx2); }
+  small { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--dim); }
+
+  .wrapg{max-width:1300px;margin:0 auto;padding:var(--sp-5) clamp(var(--sp-4),3vw,var(--sp-6)) 72px}
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(336px,1fr));gap:var(--sp-4)}
+  .mono{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .k{display:block;width:100%}
+  .iA{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}
+  .sparkpath{stroke-dasharray:700;stroke-dashoffset:700;animation:draw 1.6s var(--spring) forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+
+/* Generic minimal buttons */
+.btn, button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: 8px;
+  border: 1px solid var(--ln);
+  background: var(--s2);
+  color: var(--tx);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.btn:hover, button:hover:not(:disabled) {
+  background: var(--sunk);
+  border-color: var(--ln2);
+}
+
+.btn:active, button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled, button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-on, #fff);
+}
+
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--ac) 90%, black);
+  border-color: color-mix(in srgb, var(--ac) 90%, black);
+}
+
+.btn.danger {
+  color: var(--er);
+  border-color: color-mix(in srgb, var(--er) 40%, transparent);
+  background: color-mix(in srgb, var(--er) 10%, transparent);
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--er) 20%, transparent);
+}
+
+/* One focus ring, everywhere, and only for keyboards.
+ *
+ * Half the screens set outline:0 on their inputs — the previews did, because a
+ * mock is never tabbed through. A visible ring has to come back somewhere, and
+ * one rule here covers every control instead of thirty. */
+:focus-visible {
+  outline: 2px solid var(--tx2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline-offset: 1px;
+}
+
+/* A tap should not wait 300ms to find out it was not a double-tap. */
+button, a, input, select, textarea, [role="button"], [role="menuitem"] {
+  touch-action: manipulation;
+}
+
+/* Someone who has asked their system to stop moving things means it here too.
+   This is the blanket guard; a screen that needs to say more says it itself. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
